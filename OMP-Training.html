@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  OneMorePush - Training  |  by Vegard Brechenmacher
+  Single-Page-Webanwendung in EINER Datei (HTML + CSS + Vanilla JavaScript)
+  Externe Abhängigkeit: nur Chart.js (wird per CDN geladen)
+
+  Aufbau der Datei:
+    1. <head>   -> Metadaten, Chart.js, komplettes CSS
+    2. <body>   -> Kopfbereich mit Tabs, die vier Tab-Inhalte, Bearbeiten-Dialog
+    3. <script> -> gesamte Logik (Daten, Berechnung, Rendering, Events)
+  ============================================================================
+-->
+<html lang="de"> <!-- Sprache der Seite: Deutsch (wichtig für Screenreader/Browser) -->
+<head>
+<meta charset="UTF-8"> <!-- Zeichensatz UTF-8, damit Umlaute korrekt angezeigt werden -->
+<meta name="viewport" content="width=device-width, initial-scale=1"> <!-- Responsive: Seite passt sich der Bildschirmbreite an -->
+<title>Fitness Tracker – CTL / ATL / TSB</title> <!-- Titel im Browser-Tab -->
+
+<!-- Chart.js von einem CDN laden (wird für das Liniendiagramm benötigt) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  /* ==========================================================================
+     CSS – 1. FARBEN & GRUNDWERTE
+     CSS-Variablen (--name) werden unten mit var(--name) wiederverwendet.
+     So lässt sich das Farbschema an EINER Stelle ändern.
+     ========================================================================== */
+  :root {
+    --bg: #f3f6fb;            /* Seitenhintergrund (sehr helles Blau-Grau) */
+    --card: #ffffff;          /* Hintergrund der Karten */
+    --text: #1f2a3d;          /* Standard-Textfarbe (dunkles Blau) */
+    --muted: #6b7a90;         /* gedämpfter Text (Labels, Hinweise) */
+    --line: #e3e9f2;          /* Linienfarbe für Rahmen und Tabellentrenner */
+    --blue: #2f6fed;          /* Hauptfarbe Blau */
+    --blue-dark: #1d4fc4;     /* dunkleres Blau (Hover, aktiver Tab) */
+    --blue-soft: #e8f0ff;     /* sehr helles Blau (Flächen, Badges) */
+    --orange: #f58a1f;        /* Akzentfarbe Orange */
+    --teal: #13a89e;          /* Türkis (positive TSB-Werte, KPI-Karte) */
+    --danger: #d64545;        /* Rot für Fehler/Löschen */
+    --radius: 14px;           /* Rundung der Karten */
+    --shadow: 0 2px 10px rgba(31, 42, 61, .06); /* weicher Schatten */
+  }
+
+  /* ==========================================================================
+     CSS – 2. BASIS-STYLES
+     ========================================================================== */
+  * { box-sizing: border-box; }   /* Padding/Rahmen zählen zur Breite -> einfacheres Layout */
+  html, body { margin: 0; }       /* Standard-Außenabstand des Browsers entfernen */
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; /* System-Schrift */
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.45;            /* angenehmer Zeilenabstand */
+  }
+
+  /* ==========================================================================
+     CSS – 3. KOPFBEREICH & TAB-NAVIGATION
+     ========================================================================== */
+  header {
+    background: linear-gradient(120deg, #1d4fc4 0%, #2f6fed 55%, #5d95f5 100%); /* blauer Farbverlauf */
+    color: #fff;
+    padding: 18px 20px 0;         /* unten 0, weil die Tabs direkt anschließen */
+  }
+  .header-inner { max-width: 1100px; margin: 0 auto; } /* Inhalt zentrieren, max. 1100px breit */
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 1.25rem; font-weight: 700; letter-spacing: .2px; }
+  .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 4px rgba(245,138,31,.3); } /* oranger Punkt mit Glow */
+  nav { display: flex; gap: 4px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; } /* Tabs nebeneinander, auf Handy scrollbar */
+  nav::-webkit-scrollbar { display: none; } /* Scrollbalken in Chrome/Safari ausblenden */
+  nav button {
+    appearance: none; border: 0; background: transparent; color: rgba(255,255,255,.8);
+    padding: 11px 18px; font-size: .95rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+    border-radius: 10px 10px 0 0;  /* nur oben abgerundet -> wirkt wie ein Reiter */
+    transition: background .15s, color .15s;
+  }
+  nav button:hover { background: rgba(255,255,255,.12); color: #fff; } /* Hover-Effekt */
+  nav button.active { background: var(--bg); color: var(--blue-dark); } /* aktiver Tab hat Seitenhintergrund -> "verschmilzt" mit Inhalt */
+
+  main { max-width: 1100px; margin: 0 auto; padding: 22px 16px 60px; } /* Hauptbereich zentriert */
+  .tab { display: none; }                         /* alle Tabs standardmäßig versteckt */
+  .tab.active { display: block; animation: fade .2s ease; } /* nur der aktive Tab ist sichtbar, mit Einblend-Animation */
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  /* ==========================================================================
+     CSS – 4. KARTEN & KENNZAHLEN (KPI)
+     ========================================================================== */
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 18px; }
+  .card h2 { margin: 0 0 14px; font-size: 1.1rem; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; } /* 3 gleich breite Spalten */
+  .kpi { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; border-left: 4px solid var(--blue); }
+  .kpi.atl { border-color: var(--orange); }       /* ATL-Karte: oranger Rand */
+  .kpi.tsb { border-color: var(--teal); }         /* TSB-Karte: türkiser Rand */
+  .kpi .label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  .kpi .value { font-size: 1.7rem; font-weight: 700; margin-top: 2px; }
+  .kpi .sub { font-size: .75rem; color: var(--muted); }
+
+  /* Überschrift + Button nebeneinander in einer Karte (Historie) */
+  .card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .card-head h2 { margin: 0; }
+
+  /* Herstellervermerk in den Einstellungen */
+  .credit { text-align: center; border-top: 4px solid var(--orange); }
+  .credit strong { font-size: 1.1rem; color: var(--blue-dark); }
+  .credit span { color: var(--muted); }
+
+  /* ==========================================================================
+     CSS – 5. FORMULARE
+     ========================================================================== */
+  form.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 16px; } /* 2 Spalten */
+  .field { display: flex; flex-direction: column; gap: 5px; } /* Label über Eingabefeld */
+  .field label { font-size: .8rem; font-weight: 600; color: var(--muted); }
+  input, select {
+    font: inherit; color: var(--text); background: #fff; border: 1.5px solid var(--line);
+    border-radius: 10px; padding: 10px 12px; width: 100%;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,111,237,.15); } /* blauer Fokus-Ring */
+  .full { grid-column: 1 / -1; } /* Element über die volle Breite (beide Spalten) */
+
+  /* Vorschau-Kasten mit Load / CTL / ATL / TSB im Erfassen-Tab */
+  .preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: var(--blue-soft); border-radius: 12px; padding: 12px; }
+  .preview div { text-align: center; }
+  .preview span { display: block; font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .preview strong { font-size: 1.2rem; }
+  .preview .p-atl strong { color: var(--orange); }
+  .preview .p-ctl strong { color: var(--blue); }
+  .preview .p-tsb strong { color: var(--teal); }
+
+  /* ==========================================================================
+     CSS – 6. BUTTONS
+     ========================================================================== */
+  .btn {
+    appearance: none; border: 0; border-radius: 10px; padding: 11px 20px; font: inherit; font-weight: 600;
+    cursor: pointer; transition: background .15s, transform .05s;
+  }
+  .btn:active { transform: translateY(1px); } /* kleiner "Klick"-Effekt */
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: var(--blue-dark); }
+  .btn-accent { background: var(--orange); color: #fff; }
+  .btn-accent:hover { background: #dd7710; }
+  .btn-ghost { background: var(--blue-soft); color: var(--blue-dark); }
+  .btn-ghost:hover { background: #d6e5ff; }
+  .btn-danger { background: #fdeaea; color: var(--danger); }
+  .btn-danger:hover { background: #fad3d3; }
+  .btn-sm { padding: 6px 12px; font-size: .85rem; } /* kleine Variante (Tabellen) */
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ==========================================================================
+     CSS – 7. TABELLEN
+     ========================================================================== */
+  .table-wrap { overflow-x: auto; } /* Tabelle auf kleinen Bildschirmen horizontal scrollbar */
+  table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  th, td { padding: 10px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
+  td.num, th.num { text-align: right; } /* Zahlenspalten rechtsbündig */
+  tbody tr:hover { background: #f8faff; }
+  .pos { color: var(--teal); font-weight: 600; }   /* positiver TSB */
+  .neg { color: var(--orange); font-weight: 600; } /* negativer TSB */
+  .badge { display: inline-block; background: var(--blue-soft); color: var(--blue-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 600; }
+  .empty { text-align: center; color: var(--muted); padding: 30px 10px; } /* Hinweis "keine Daten" */
+
+  /* ==========================================================================
+     CSS – 8. FITNESS CHART & FORMEINSCHÄTZUNG
+     ========================================================================== */
+  .chart-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; } /* Zeitraum-Auswahl */
+  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: var(--muted); }
+  .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .chart-box { position: relative; height: 420px; } /* Chart.js braucht einen Container mit fester Höhe */
+
+  /* Statuskasten: TSB-Zahl links, Titel + Erklärung rechts. Farbe wird per JS gesetzt. */
+  .fs-box { display: flex; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 12px; border-left: 6px solid var(--muted); background: #f6f8fc; margin-bottom: 22px; }
+  .fs-tsb { text-align: center; min-width: 84px; }
+  .fs-tsb span { display: block; font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .fs-tsb strong { font-size: 1.9rem; }
+  .fs-title { font-weight: 700; font-size: 1.1rem; }
+  .fs-box p { margin: 4px 0 0; color: var(--muted); font-size: .92rem; }
+
+  /* Farbskala (Gauge) mit Marker für den aktuellen TSB */
+  .gauge-wrap { position: relative; padding-top: 14px; } /* oben Platz für den Marker */
+  .gauge { display: flex; height: 14px; border-radius: 999px; overflow: hidden; } /* farbige Segmente nebeneinander */
+  .gauge div { height: 100%; }
+  .gauge-marker {  /* kleines Dreieck, das auf die aktuelle Position zeigt */
+    position: absolute; top: 0; width: 0; height: 0;
+    border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 11px solid var(--text);
+    transform: translateX(-50%);  /* Dreieck mittig auf die Position setzen */
+    transition: left .3s;         /* sanftes Verschieben */
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 14px; font-size: .82rem; color: var(--muted); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; } /* farbiger Punkt */
+
+  /* ==========================================================================
+     CSS – 9. EINSTELLUNGEN
+     ========================================================================== */
+  .settings-row input { padding: 7px 10px; } /* Eingabefelder in der Tabelle etwas kompakter */
+  .add-row { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; margin-top: 16px; } /* Zeile "Neue Sportart" */
+  .hint { color: var(--muted); font-size: .85rem; margin-top: 10px; }
+
+  /* ==========================================================================
+     CSS – 10. DIALOG (Training bearbeiten) & TOAST (kurze Meldungen)
+     ========================================================================== */
+  dialog { border: 0; border-radius: var(--radius); padding: 0; width: min(560px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+  dialog::backdrop { background: rgba(20, 30, 50, .45); } /* abgedunkelter Hintergrund hinter dem Dialog */
+  .dialog-inner { padding: 22px; }
+  .dialog-inner h2 { margin: 0 0 14px; }
+
+  .toast {  /* Meldung unten mittig, standardmäßig unsichtbar */
+    position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
+    background: #1f2a3d; color: #fff; padding: 11px 20px; border-radius: 10px; font-weight: 600;
+    opacity: 0; pointer-events: none; transition: all .25s; z-index: 50; max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); } /* sichtbar */
+  .toast.error { background: var(--danger); }                           /* Fehlermeldung in Rot */
+
+  /* ==========================================================================
+     CSS – 11. RESPONSIVE (Handy / schmale Bildschirme bis 640px)
+     ========================================================================== */
+  @media (max-width: 640px) {
+    form.grid { grid-template-columns: 1fr; }          /* Formular einspaltig */
+    .kpis { grid-template-columns: 1fr; }              /* KPI-Karten untereinander */
+    .preview { grid-template-columns: repeat(2, 1fr); }
+    .add-row { grid-template-columns: 1fr; }
+    .chart-box { height: 320px; }                      /* Chart niedriger */
+    .kpi .value { font-size: 1.4rem; }
+    .fs-box { flex-direction: column; align-items: flex-start; } /* Statuskasten untereinander */
+  }
+</style>
+</head>
+
+<body>
+
+<!-- ============================================================================
+     KOPFBEREICH mit Titel und den vier Tab-Buttons.
+     Jeder Button hat data-tab="..." -> das JavaScript schaltet damit den passenden Tab um.
+     ============================================================================ -->
+<header>
+  <div class="header-inner">
+    <div class="brand"><span class="dot"></span> Fitness Tracker</div>
+    <nav id="tabs">
+      <button data-tab="erfassen" class="active">Training erfassen</button>
+      <button data-tab="historie">Trainingshistorie</button>
+      <button data-tab="chart">Fitness Chart</button>
+      <button data-tab="settings">Einstellungen</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ==========================================================================
+       TAB 1: TRAINING ERFASSEN
+       ========================================================================== -->
+  <section id="tab-erfassen" class="tab active">
+
+    <!-- Drei Kennzahlen: aktueller Stand (heute) von CTL, ATL und TSB -->
+    <div class="kpis">
+      <div class="kpi"><div class="label">Fitness (CTL)</div><div class="value" id="kpi-ctl">0</div><div class="sub">Stand heute</div></div>
+      <div class="kpi atl"><div class="label">Ermüdung (ATL)</div><div class="value" id="kpi-atl">0</div><div class="sub">Stand heute</div></div>
+      <div class="kpi tsb"><div class="label">Form (TSB)</div><div class="value" id="kpi-tsb">0</div><div class="sub">Stand heute</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Training erfassen</h2>
+      <!-- novalidate: wir prüfen die Eingaben selbst per JavaScript (eigene Fehlermeldungen) -->
+      <form id="form-add" class="grid" novalidate>
+        <!-- type="date" öffnet im Browser den Kalender zur Datumsauswahl -->
+        <div class="field"><label for="a-date">Datum</label><input type="date" id="a-date" required></div>
+        <!-- Die Optionen dieses Dropdowns füllt JavaScript aus den Einstellungen (Tab 4) -->
+        <div class="field"><label for="a-sport">Sportart</label><select id="a-sport" required></select></div>
+        <div class="field"><label for="a-dur">Dauer (min)</label><input type="number" id="a-dur" min="1" step="1" inputmode="numeric" placeholder="z. B. 60" required></div>
+        <!-- Distanz als Text, damit auch ein Komma (10,5) eingegeben werden kann -->
+        <div class="field"><label for="a-dist">Distanz (km)</label><input type="text" id="a-dist" inputmode="decimal" placeholder="z. B. 10,5"></div>
+        <div class="field full"><label for="a-rpe">RPE (1–10)</label><input type="number" id="a-rpe" min="1" max="10" step="1" inputmode="numeric" placeholder="1 = sehr leicht, 10 = maximal" required></div>
+
+        <!-- Live-Vorschau: wird bei jeder Eingabe neu berechnet (siehe updatePreview) -->
+        <div class="full preview" id="preview">
+          <div><span>Load</span><strong id="pv-load">–</strong></div>
+          <div class="p-ctl"><span>CTL</span><strong id="pv-ctl">–</strong></div>
+          <div class="p-atl"><span>ATL</span><strong id="pv-atl">–</strong></div>
+          <div class="p-tsb"><span>TSB</span><strong id="pv-tsb">–</strong></div>
+        </div>
+        <div class="full actions"><button type="submit" class="btn btn-accent">Training speichern</button></div>
+      </form>
+      <p class="hint">Load = Dauer × RPE × Sportfaktor · ATL: 7-Tage-Zeitkonstante · CTL: 42-Tage-Zeitkonstante · TSB = CTL − ATL. Die Vorschau zeigt die Werte am Trainingstag inkl. dieses Trainings.</p>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       TAB 2: TRAININGSHISTORIE
+       ========================================================================== -->
+  <section id="tab-historie" class="tab">
+
+    <!-- Wochenübersicht (Montag bis Sonntag). Zeilen erzeugt renderWeeks() -->
+    <div class="card">
+      <div class="card-head">
+        <h2>Wochenübersicht</h2>
+        <!-- hidden: Button erscheint nur, wenn es mehr als 12 Wochen gibt -->
+        <button class="btn btn-ghost btn-sm" id="btn-weeks-all" type="button" hidden>Alle Wochen anzeigen</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Woche</th><th>Zeitraum</th><th class="num">Trainings</th><th class="num">Stunden</th><th class="num">Distanz</th><th class="num">Load</th></tr>
+          </thead>
+          <tbody id="week-body"></tbody>
+        </table>
+      </div>
+      <p class="hint">Woche von Montag bis Sonntag (Kalenderwoche nach ISO). Stunden im Format h:mm.</p>
+    </div>
+
+    <!-- Einzelne Trainings mit Bearbeiten/Löschen. Zeilen erzeugt renderHistory() -->
+    <div class="card">
+      <div class="card-head">
+        <h2>Trainingshistorie</h2>
+        <button class="btn btn-primary btn-sm" id="btn-csv" type="button">Als CSV für Excel exportieren</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Datum</th><th>Sportart</th>
+              <th class="num">Dauer</th><th class="num">Distanz</th><th class="num">RPE</th>
+              <th class="num">Load</th><th class="num">ATL</th><th class="num">CTL</th><th class="num">TSB</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="hist-body"></tbody>
+        </table>
+      </div>
+      <p class="hint">ATL, CTL und TSB zeigen den Tageswert (Summe aller Trainings des Tages). Die CSV-Datei (Trennzeichen „;“, Dezimalkomma, UTF-8) öffnet sich in deutschem Excel per Doppelklick; alternativ über Daten → Aus Text/CSV.</p>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       TAB 3: FITNESS CHART
+       ========================================================================== -->
+  <section id="tab-chart" class="tab">
+    <div class="card">
+      <h2>Fitness Chart</h2>
+      <!-- Zeitraum-Auswahl; data-range = Anzahl Tage (0 = alles) -->
+      <div class="chart-toolbar" id="range-chips">
+        <button class="chip" data-range="30">30 Tage</button>
+        <button class="chip active" data-range="90">90 Tage</button>
+        <button class="chip" data-range="180">6 Monate</button>
+        <button class="chip" data-range="365">1 Jahr</button>
+        <button class="chip" data-range="0">Alles</button>
+      </div>
+      <!-- Die Zeichenfläche (canvas) für Chart.js -->
+      <div class="chart-box"><canvas id="fitness-chart"></canvas></div>
+      <p class="hint" id="chart-msg"></p>
+    </div>
+
+    <!-- Textuelle Einschätzung der aktuellen Form (TSB von heute) -->
+    <div class="card">
+      <h2>Formeinschätzung</h2>
+      <div class="fs-box" id="fs-box">
+        <div class="fs-tsb"><span>TSB heute</span><strong id="fs-tsb">–</strong></div>
+        <div>
+          <div class="fs-title" id="fs-title">Noch keine Daten</div>
+          <p id="fs-desc">Erfasse zuerst ein Training, dann erscheint hier deine Einschätzung.</p>
+        </div>
+      </div>
+      <!-- Farbskala: Segmente und Legende werden aus der ZONES-Liste im JavaScript erzeugt -->
+      <div class="gauge-wrap">
+        <div class="gauge-marker" id="gauge-marker" style="left:0%"></div>
+        <div class="gauge" id="gauge"></div>
+      </div>
+      <div class="legend" id="zone-legend"></div>
+      <p class="hint">Richtwerte nach gängiger TSB-Einteilung. Wie viel Ermüdung du verträgst, ist individuell – nimm die Einschätzung als Orientierung, nicht als Diagnose.</p>
+    </div>
+  </section>
+
+  <!-- ==========================================================================
+       TAB 4: EINSTELLUNGEN
+       ========================================================================== -->
+  <section id="tab-settings" class="tab">
+    <div class="card">
+      <h2>Sportarten & Sportfaktoren</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Sportart</th><th style="width:160px">Sportfaktor</th><th style="width:110px"></th></tr></thead>
+          <tbody id="sport-body"></tbody> <!-- Zeilen erzeugt renderSports() -->
+        </table>
+      </div>
+      <!-- Zeile zum Anlegen einer neuen Sportart -->
+      <div class="add-row">
+        <div class="field"><label for="n-name">Neue Sportart</label><input type="text" id="n-name" placeholder="z. B. Skitouren"></div>
+        <div class="field"><label for="n-factor">Sportfaktor</label><input type="text" id="n-factor" inputmode="decimal" placeholder="z. B. 0,9"></div>
+        <button class="btn btn-primary" id="btn-add-sport" type="button">Hinzufügen</button>
+      </div>
+      <p class="hint">Änderungen werden automatisch gespeichert. Bereits erfasste Trainings behalten den Sportfaktor, der beim Speichern galt. Dezimalwerte mit Komma oder Punkt.</p>
+    </div>
+
+    <!-- Datensicherung -->
+    <div class="card">
+      <h2>Daten</h2>
+      <div class="actions">
+        <button class="btn btn-ghost" id="btn-export" type="button">Daten exportieren (JSON)</button>
+        <button class="btn btn-ghost" id="btn-import" type="button">Daten importieren</button>
+        <button class="btn btn-danger" id="btn-reset" type="button">Alles zurücksetzen</button>
+        <!-- Verstecktes Datei-Feld; der Import-Button löst es per JavaScript aus -->
+        <input type="file" id="file-import" accept="application/json" hidden>
+      </div>
+    </div>
+
+    <!-- Herstellervermerk -->
+    <div class="card credit">
+      <strong>OneMorePush - Training</strong><br>
+      <span>by Vegard Brechenmacher</span>
+    </div>
+  </section>
+</main>
+
+<!-- ============================================================================
+     DIALOG: Training bearbeiten (wird per JavaScript mit showModal() geöffnet)
+     ============================================================================ -->
+<dialog id="dlg-edit">
+  <div class="dialog-inner">
+    <h2>Training bearbeiten</h2>
+    <form id="form-edit" class="grid" novalidate>
+      <div class="field"><label for="e-date">Datum</label><input type="date" id="e-date" required></div>
+      <div class="field"><label for="e-sport">Sportart</label><select id="e-sport" required></select></div>
+      <div class="field"><label for="e-dur">Dauer (min)</label><input type="number" id="e-dur" min="1" step="1" required></div>
+      <div class="field"><label for="e-dist">Distanz (km)</label><input type="text" id="e-dist" inputmode="decimal"></div>
+      <div class="field full"><label for="e-rpe">RPE (1–10)</label><input type="number" id="e-rpe" min="1" max="10" step="1" required></div>
+      <div class="full actions" style="justify-content:flex-end">
+        <button type="button" class="btn btn-ghost" id="e-cancel">Abbrechen</button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Meldung ("Training gespeichert" usw.), wird von toast() ein- und ausgeblendet -->
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================================
+   JAVASCRIPT
+   Alles steckt in einer sofort ausgeführten Funktion (IIFE) "(function () { ... })();".
+   Dadurch landen keine Variablen im globalen Namensraum.
+   ============================================================================ */
+(function () {
+  'use strict'; // strenger Modus: verhindert typische Programmierfehler (z. B. nicht deklarierte Variablen)
+
+  /* ==========================================================================
+     1. KONSTANTEN & ZUSTAND (State)
+     ========================================================================== */
+
+  // Schlüssel, unter denen die Daten im LocalStorage des Browsers liegen
+  const KEY_TRAININGS = 'ft_trainings_v1';
+  const KEY_SPORTS = 'ft_sports_v1';
+
+  // Startwerte der Sportarten (laut Vorgabe). Wird nur beim allerersten Start benutzt.
+  const DEFAULT_SPORTS = [
+    { name: 'Laufen', factor: 1.0 },
+    { name: 'Rollski', factor: 0.95 },
+    { name: 'Langlauf', factor: 0.95 },
+    { name: 'MTB', factor: 0.9 },
+    { name: 'Rennrad', factor: 0.85 },
+    { name: 'Kraft', factor: 0.7 },
+    { name: 'Schwimmen', factor: 1.1 }
+  ];
+
+  // Millisekunden pro Tag – wird zum Rechnen mit Tagesnummern gebraucht
+  const DAY = 86400000;
+
+  /*
+    FORMZONEN (TSB-Einteilung)
+    Die Liste ist aufsteigend nach TSB sortiert. "max" ist die OBERE Grenze der Zone
+    (der TSB muss KLEINER als max sein). Die letzte Zone hat Infinity = nach oben offen.
+    Hier kannst du Grenzen, Farben und Texte anpassen – Diagramm, Skala, Legende
+    und Einschätzung ziehen sich alle Werte aus dieser einen Liste.
+    "range" enthält HTML-Entities (&lt; = "<", &gt; = ">"), weil der Text per innerHTML eingesetzt wird.
+  */
+  const ZONES = [
+    { max: -30, title: 'Überlastungsrisiko', short: 'Überlastung', range: '&lt; −30', color: '#d64545', // rot
+      desc: 'Deine Ermüdung ist sehr hoch im Verhältnis zur Fitness. Verletzungs- und Übertrainingsrisiko steigen – plane Erholung ein und reduziere Umfang und Intensität.' },
+    { max: -10, title: 'Formaufbau', short: 'Formaufbau', range: '−30 bis −10', color: '#22a35a', // grün
+      desc: 'Du trainierst im produktiven Bereich: genug Belastung für Fitnesszuwachs, ohne dich zu überfordern. Genau hier baust du deine Form auf.' },
+    { max: 5, title: 'Erhaltung / Grauzone', short: 'Erhaltung', range: '−10 bis +5', color: '#7d8aa0', // grau
+      desc: 'Belastung und Erholung sind ausgeglichen. Das reicht zum Halten der Fitness, setzt aber wenig Reiz für neuen Fitnessaufbau.' },
+    { max: 20, title: 'Wettkampfbereit', short: 'Wettkampfbereit', range: '+5 bis +20', color: '#f58a1f', // orange
+      desc: 'Du bist ausgeruht und trotzdem fit – ideal für Wettkämpfe oder harte Schlüsseleinheiten.' },
+    { max: Infinity, title: 'Zu frisch', short: 'Zu frisch', range: '&gt; +20', color: '#2f6fed', // blau
+      desc: 'Dein TSB ist sehr hoch, weil du wenig oder nichts trainiert hast. Du bist erholt, verlierst aber Fitness (CTL sinkt). Zeit, wieder Reize zu setzen.' }
+  ];
+
+  // Wertebereich der Farbskala (Gauge) unter dem Diagramm: von TSB -40 bis +30
+  const GAUGE_MIN = -40;
+  const GAUGE_MAX = 30;
+
+  // Zustand der Anwendung: wird beim Start aus dem LocalStorage geladen
+  let sports = load(KEY_SPORTS, null) || DEFAULT_SPORTS.map(s => ({ ...s })); // gespeicherte Sportarten, sonst Kopie der Startwerte
+  let trainings = load(KEY_TRAININGS, []); // gespeicherte Trainings, sonst leere Liste
+  let editId = null;       // ID des Trainings, das gerade im Dialog bearbeitet wird
+  let chart = null;        // Chart.js-Instanz (damit wir sie vor dem Neuzeichnen zerstören können)
+  let chartRange = 90;     // gewählter Zeitraum im Chart in Tagen (0 = alles)
+  let showAllWeeks = false; // Wochenübersicht: false = nur letzte 12 Wochen
+
+  /* ==========================================================================
+     2. SPEICHERN & LADEN (LocalStorage)
+     ========================================================================== */
+
+  // Liest einen Wert aus dem LocalStorage und wandelt den JSON-Text zurück in ein Objekt.
+  // Bei leerem Eintrag oder Fehler wird der Fallback-Wert zurückgegeben.
+  function load(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);       // Text holen
+      return raw ? JSON.parse(raw) : fallback;     // Text -> Objekt, sonst Fallback
+    } catch (e) { return fallback; }                // z. B. LocalStorage gesperrt oder kaputtes JSON
+  }
+  // Speichert die Sportarten als JSON-Text; bei Fehler erscheint eine Meldung
+  function saveSports() { try { localStorage.setItem(KEY_SPORTS, JSON.stringify(sports)); } catch (e) { toast('Speichern fehlgeschlagen', true); } }
+  // Speichert die Trainings als JSON-Text
+  function saveTrainings() { try { localStorage.setItem(KEY_TRAININGS, JSON.stringify(trainings)); } catch (e) { toast('Speichern fehlgeschlagen', true); } }
+
+  /* ==========================================================================
+     3. HILFSFUNKTIONEN
+     ========================================================================== */
+
+  // Kurzform für document.getElementById
+  const $ = id => document.getElementById(id);
+
+  // Zahl im deutschen Format (Komma als Dezimaltrenner) mit d Nachkommastellen, z. B. fmt(3.14159, 1) -> "3,1"
+  const fmt = (n, d = 1) => Number(n).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+  // Sportfaktor anzeigen: mindestens 2, höchstens 3 Nachkommastellen (1 -> "1,00", 0.95 -> "0,95")
+  const fmtFactor = n => Number(n).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
+  // Text in Zahl umwandeln; akzeptiert Komma UND Punkt. Ungültige Eingabe ergibt NaN.
+  const parseNum = v => {
+    const n = parseFloat(String(v).trim().replace(',', '.')); // Komma durch Punkt ersetzen
+    return isFinite(n) ? n : NaN;                              // keine echte Zahl -> NaN
+  };
+
+  // Sonderzeichen maskieren, damit Benutzertexte (z. B. Sportnamen) kein HTML einschleusen können
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // Erzeugt eine eindeutige ID für ein Training (Zeitstempel + Zufallsanteil)
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  // Datum "JJJJ-MM-TT" -> fortlaufende Tagesnummer (Tage seit 1.1.1970). Mit UTC gerechnet, damit Sommerzeit nichts verfälscht.
+  const toDayNum = iso => { const [y, m, d] = iso.split('-').map(Number); return Date.UTC(y, m - 1, d) / DAY; };
+
+  // Tagesnummer -> Datum "JJJJ-MM-TT" (Umkehrung von toDayNum)
+  const fromDayNum = n => new Date(n * DAY).toISOString().slice(0, 10);
+
+  // Heutiges Datum als "JJJJ-MM-TT" in LOKALER Zeit (toISOString würde UTC nehmen und abends den falschen Tag liefern)
+  const todayISO = () => {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+
+  // "JJJJ-MM-TT" -> "TT.MM.JJJJ" für die Anzeige
+  const fmtDate = iso => { const [y, m, d] = iso.split('-'); return d + '.' + m + '.' + y; };
+
+  // Sportfaktor einer Sportart nachschlagen; unbekannte Sportart -> Faktor 1
+  const sportFactor = name => { const s = sports.find(x => x.name === name); return s ? s.factor : 1; };
+
+  // Hex-Farbe (#rrggbb) + Transparenz -> "rgba(r,g,b,a)". Wird für die halbtransparenten Zonen im Chart gebraucht.
+  const hexToRgba = (hex, alpha) => {
+    const n = parseInt(hex.slice(1), 16);                                // "#22a35a" -> Zahl
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`; // Rot-, Grün-, Blauanteil herausschneiden
+  };
+
+  // Kurze Meldung unten einblenden (isError = true -> rot)
+  let toastTimer; // merkt sich den Timer, damit schnelle Folge-Meldungen sauber funktionieren
+  function toast(msg, isError) {
+    const t = $('toast');
+    t.textContent = msg;                       // Text setzen
+    t.classList.toggle('error', !!isError);    // rot bei Fehler
+    t.classList.add('show');                   // einblenden
+    clearTimeout(toastTimer);                  // alten Timer abbrechen
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2500); // nach 2,5 s wieder ausblenden
+  }
+
+  /* ==========================================================================
+     4. BERECHNUNG (Load, ATL, CTL, TSB)
+     ========================================================================== */
+
+  // Load = Dauer × RPE × Sportfaktor
+  const calcLoad = (dur, rpe, factor) => dur * rpe * factor;
+
+  /*
+    Berechnet die Tagesreihe für ATL, CTL und TSB.
+    - Start: erster Trainingstag, Ende: heute (bzw. letztes Training, falls es in der Zukunft liegt)
+    - Trainings am selben Tag werden zum Tages-Load addiert
+    - Tage ohne Training haben Load 0 (die Werte sinken dann langsam ab)
+    - Formeln laut Vorgabe:
+        ATL_heute = ATL_vortag + (Load - ATL_vortag) / 7
+        CTL_heute = CTL_vortag + (Load - CTL_vortag) / 42
+        TSB       = CTL - ATL
+    Rückgabe: { days: [Liste aller Tage], map: { 'JJJJ-MM-TT': Tageswerte } }
+  */
+  function computeSeries(list) {
+    if (!list.length) return { days: [], map: {} };   // keine Trainings -> leere Reihe
+
+    const loads = {};                  // Tagesnummer -> Summe der Loads dieses Tages
+    let min = Infinity, max = -Infinity; // frühester und spätester Trainingstag
+    list.forEach(t => {
+      const n = toDayNum(t.date);
+      loads[n] = (loads[n] || 0) + t.load;           // Load des Tages aufsummieren
+      if (n < min) min = n;
+      if (n > max) max = n;
+    });
+    max = Math.max(max, toDayNum(todayISO()));       // Reihe mindestens bis heute laufen lassen
+
+    const days = [], map = {};
+    let atl = 0, ctl = 0;                            // Startwerte: 0
+    for (let n = min; n <= max; n++) {               // Tag für Tag durchgehen
+      const l = loads[n] || 0;                       // Load dieses Tages (0 = Ruhetag)
+      atl = atl + (l - atl) / 7;                     // ATL-Formel (7 Tage)
+      ctl = ctl + (l - ctl) / 42;                    // CTL-Formel (42 Tage)
+      const row = { date: fromDayNum(n), load: l, atl, ctl, tsb: ctl - atl }; // TSB = CTL - ATL
+      days.push(row);                                // in die Liste
+      map[row.date] = row;                           // und ins Nachschlage-Objekt
+    }
+    return { days, map };
+  }
+
+  /* ==========================================================================
+     5. TAB-UMSCHALTUNG
+     ========================================================================== */
+
+  // Klick auf einen Tab-Button
+  document.querySelectorAll('#tabs button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Nur der angeklickte Button bekommt die Klasse "active"
+      document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
+      // Nur der passende Inhalt (id="tab-...") wird sichtbar
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + btn.dataset.tab));
+      // Inhalte beim Wechsel aktualisieren
+      if (btn.dataset.tab === 'historie') renderHistory();
+      if (btn.dataset.tab === 'chart') renderChart(); // Chart erst zeichnen, wenn sichtbar (sonst falsche Größe)
+      if (btn.dataset.tab === 'erfassen') { renderKpis(); updatePreview(); }
+    });
+  });
+
+  /* ==========================================================================
+     6. TAB 1 – TRAINING ERFASSEN
+     ========================================================================== */
+
+  // Befüllt ein Sportart-Dropdown mit den Sportarten aus den Einstellungen.
+  // "selected" = Sportart, die vorausgewählt sein soll (optional).
+  function fillSportSelect(sel, selected) {
+    sel.innerHTML = '';                                // alte Einträge entfernen
+    sports.forEach(s => {
+      const o = document.createElement('option');      // neuen Eintrag anlegen
+      o.value = s.name; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+    // Falls ein altes Training eine inzwischen gelöschte Sportart hat: trotzdem anbieten, damit nichts verloren geht
+    if (selected && !sports.some(s => s.name === selected)) {
+      const o = document.createElement('option');
+      o.value = selected; o.textContent = selected + ' (entfernt)';
+      sel.appendChild(o);
+    }
+    if (selected) sel.value = selected;                // Vorauswahl setzen
+  }
+
+  // Liest die Eingabefelder eines Formulars aus. prefix = 'a' (Erfassen) oder 'e' (Bearbeiten).
+  function readForm(prefix) {
+    const date = $(prefix + '-date').value;
+    const sport = $(prefix + '-sport').value;
+    const dur = parseNum($(prefix + '-dur').value);
+    const rpe = parseNum($(prefix + '-rpe').value);
+    const distRaw = $(prefix + '-dist').value.trim();
+    const dist = distRaw === '' ? 0 : parseNum(distRaw); // Distanz ist optional: leer = 0
+    return { date, sport, dur, rpe, dist };
+  }
+
+  // Prüft die Eingaben. Rückgabe: Fehlertext oder null, wenn alles passt.
+  function validate(v) {
+    if (!v.date) return 'Bitte ein Datum wählen.';
+    if (!v.sport) return 'Bitte eine Sportart wählen (Einstellungen).';
+    if (!(v.dur > 0)) return 'Die Dauer muss größer als 0 sein.';
+    if (isNaN(v.dist) || v.dist < 0) return 'Ungültige Distanz.';
+    if (!(v.rpe >= 1 && v.rpe <= 10)) return 'RPE muss zwischen 1 und 10 liegen.';
+    return null;
+  }
+
+  // Live-Vorschau: berechnet Load/CTL/ATL/TSB für das Training, das gerade eingegeben wird (noch nicht gespeichert)
+  function updatePreview() {
+    const v = readForm('a');
+    // Solange Pflichtfelder fehlen: Platzhalter "–" anzeigen
+    if (!v.date || !(v.dur > 0) || !(v.rpe >= 1 && v.rpe <= 10) || !v.sport) {
+      ['pv-load', 'pv-ctl', 'pv-atl', 'pv-tsb'].forEach(i => $(i).textContent = '–');
+      return;
+    }
+    const load = calcLoad(v.dur, v.rpe, sportFactor(v.sport));        // Load des neuen Trainings
+    const hypo = trainings.concat([{ date: v.date, load }]);          // bestehende Trainings + "Gedanken-Training"
+    const row = computeSeries(hypo).map[v.date];                      // Werte an diesem Tag nachschlagen
+    $('pv-load').textContent = fmt(load, 0);
+    $('pv-ctl').textContent = fmt(row.ctl);
+    $('pv-atl').textContent = fmt(row.atl);
+    $('pv-tsb').textContent = fmt(row.tsb);
+  }
+  // Vorschau bei jeder Änderung der relevanten Felder neu berechnen
+  ['a-date', 'a-sport', 'a-dur', 'a-rpe'].forEach(id => {
+    $(id).addEventListener('input', updatePreview);
+    $(id).addEventListener('change', updatePreview);
+  });
+
+  // Training speichern (Klick auf "Training speichern" bzw. Enter)
+  $('form-add').addEventListener('submit', e => {
+    e.preventDefault();                          // Seite nicht neu laden
+    const v = readForm('a');
+    const err = validate(v);
+    if (err) return toast(err, true);            // Fehler anzeigen und abbrechen
+    const factor = sportFactor(v.sport);         // Faktor JETZT festhalten (spätere Änderungen betreffen dieses Training nicht)
+    trainings.push({
+      id: uid(), date: v.date, sport: v.sport, duration: v.dur, distance: v.dist,
+      rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor)
+    });
+    saveTrainings();                             // in LocalStorage sichern
+    $('a-dur').value = ''; $('a-dist').value = ''; $('a-rpe').value = ''; // Felder leeren (Datum/Sportart bleiben)
+    toast('Training gespeichert');
+    renderKpis(); updatePreview();
+  });
+
+  // Aktualisiert die drei Kennzahlen oben (Werte von heute)
+  function renderKpis() {
+    const { days } = computeSeries(trainings);
+    const last = days.length ? days[days.length - 1] : { ctl: 0, atl: 0, tsb: 0 }; // letzter Tag = heute
+    $('kpi-ctl').textContent = fmt(last.ctl);
+    $('kpi-atl').textContent = fmt(last.atl);
+    $('kpi-tsb').textContent = fmt(last.tsb);
+  }
+
+  /* ==========================================================================
+     7. TAB 2 – TRAININGSHISTORIE
+     ========================================================================== */
+
+  /* ---------- 7a. Wochenübersicht ---------- */
+
+  // ISO-Kalenderwoche aus der Tagesnummer des Montags.
+  // Regel: Die KW gehört zu dem Jahr, in dem der DONNERSTAG der Woche liegt.
+  function isoWeek(startDay) {
+    const thu = startDay + 3;                                        // Donnerstag = Montag + 3 Tage
+    const year = new Date(thu * DAY).getUTCFullYear();               // Jahr des Donnerstags
+    const jan1 = Date.UTC(year, 0, 1) / DAY;                         // Tagesnummer des 1. Januar
+    return { kw: Math.floor((thu - jan1) / 7) + 1, year };           // Wochen seit 1.1. + 1
+  }
+
+  // Minuten -> "h:mm h" (z. B. 125 -> "2:05 h")
+  function fmtHours(minutes) {
+    const tot = Math.round(minutes);
+    return Math.floor(tot / 60) + ':' + String(tot % 60).padStart(2, '0') + ' h';
+  }
+
+  // Fasst alle Trainings pro Woche (Montag–Sonntag) zusammen. Neueste Woche zuerst.
+  function computeWeeks() {
+    const weeks = {};
+    trainings.forEach(t => {
+      const n = toDayNum(t.date);
+      // Tagesnummer 0 (1.1.1970) war ein Donnerstag -> (n+3) % 7 ergibt 0 für Montag, 6 für Sonntag.
+      // Das zusätzliche "+7 ... %7" fängt negative Werte bei Daten vor 1970 ab.
+      const start = n - ((((n + 3) % 7) + 7) % 7);                   // Tagesnummer des Montags dieser Woche
+      const w = weeks[start] || (weeks[start] = { start, count: 0, minutes: 0, km: 0, load: 0 });
+      w.count++;                                                     // Anzahl Trainings
+      w.minutes += t.duration;                                       // Minuten summieren
+      w.km += t.distance || 0;                                       // Kilometer summieren
+      w.load += t.load;                                              // Load summieren
+    });
+    return Object.values(weeks).sort((a, b) => b.start - a.start);   // absteigend sortieren
+  }
+
+  // Zeichnet die Tabelle der Wochenübersicht
+  function renderWeeks() {
+    const all = computeWeeks();
+    const btn = $('btn-weeks-all');
+    const body = $('week-body');
+    if (!all.length) {                                               // noch keine Daten
+      body.innerHTML = '<tr><td colspan="6" class="empty">Noch keine Trainings erfasst.</td></tr>';
+      btn.hidden = true;
+      return;
+    }
+    const weeks = showAllWeeks ? all : all.slice(0, 12);             // standardmäßig nur die letzten 12 Wochen
+    btn.hidden = all.length <= 12;                                   // Button nur bei mehr als 12 Wochen zeigen
+    btn.textContent = showAllWeeks ? 'Nur letzte 12 Wochen' : 'Alle Wochen anzeigen';
+    body.innerHTML = weeks.map(w => {
+      const iso = isoWeek(w.start);
+      return `<tr>
+        <td><span class="badge">KW ${iso.kw}</span></td>
+        <td>${fmtDate(fromDayNum(w.start)).slice(0, 6)} – ${fmtDate(fromDayNum(w.start + 6))}</td>
+        <td class="num">${w.count}</td>
+        <td class="num"><strong>${fmtHours(w.minutes)}</strong></td>
+        <td class="num">${w.km ? fmt(w.km, 1) + ' km' : '–'}</td>
+        <td class="num">${fmt(w.load, 0)}</td>
+      </tr>`;
+    }).join('');
+  }
+  // Umschalten zwischen "letzte 12 Wochen" und "alle Wochen"
+  $('btn-weeks-all').addEventListener('click', () => { showAllWeeks = !showAllWeeks; renderWeeks(); });
+
+  /* ---------- 7b. CSV-Export für Excel ---------- */
+  // Deutsches Excel erwartet: Semikolon als Trenner, Komma als Dezimaltrenner, UTF-8 mit BOM (für Umlaute).
+
+  // Text für CSV vorbereiten: enthält er ; " oder Zeilenumbruch, wird er in Anführungszeichen gesetzt
+  const csvText = s => { s = String(s); return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  // Zahl für CSV: optional auf d Nachkommastellen runden, Punkt durch Komma ersetzen
+  const csvNum = (n, d) => (d === undefined ? String(n) : Number(n).toFixed(d)).replace('.', ',');
+
+  $('btn-csv').addEventListener('click', () => {
+    if (!trainings.length) return toast('Keine Trainings zum Exportieren.', true);
+    const { map } = computeSeries(trainings);
+    const rows = [['Datum', 'Sportart', 'Dauer (min)', 'Distanz (km)', 'RPE', 'Sportfaktor', 'Load', 'ATL', 'CTL', 'TSB']]; // Kopfzeile
+    trainings.slice()                                                          // Kopie, damit das Original unsortiert bleibt
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) // älteste zuerst
+      .forEach(t => {
+        const r = map[t.date];                                                  // Tageswerte ATL/CTL/TSB
+        rows.push([
+          fmtDate(t.date), csvText(t.sport), csvNum(t.duration), csvNum(t.distance || 0),
+          csvNum(t.rpe), csvNum(t.factor), csvNum(t.load, 1), csvNum(r.atl, 1), csvNum(r.ctl, 1), csvNum(r.tsb, 1)
+        ]);
+      });
+    const csv = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');            // BOM + Zeilen mit ";" verbinden
+    const a = document.createElement('a');                                      // unsichtbarer Download-Link
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'trainingshistorie-' + todayISO() + '.csv';                    // Dateiname mit Datum
+    a.click();                                                                  // Download auslösen
+    URL.revokeObjectURL(a.href);                                                // Speicher freigeben
+  });
+
+  /* ---------- 7c. Trainingsliste ---------- */
+
+  // Zeichnet die Wochenübersicht und die Tabelle aller Trainings (neueste zuerst)
+  function renderHistory() {
+    renderWeeks();
+    const { map } = computeSeries(trainings);          // Tageswerte für ATL/CTL/TSB
+    const body = $('hist-body');
+    if (!trainings.length) {
+      body.innerHTML = '<tr><td colspan="10" class="empty">Noch keine Trainings erfasst.</td></tr>';
+      return;
+    }
+    // Sortierung: nach Datum absteigend, bei gleichem Datum nach ID
+    const sorted = trainings.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    body.innerHTML = sorted.map(t => {
+      const r = map[t.date];                            // Werte des Trainingstages
+      return `<tr>
+        <td>${fmtDate(t.date)}</td>
+        <td><span class="badge">${esc(t.sport)}</span></td>
+        <td class="num">${fmt(t.duration, 0)} min</td>
+        <td class="num">${t.distance ? fmt(t.distance, 1) + ' km' : '–'}</td>
+        <td class="num">${fmt(t.rpe, 0)}</td>
+        <td class="num"><strong>${fmt(t.load, 0)}</strong></td>
+        <td class="num">${fmt(r.atl)}</td>
+        <td class="num">${fmt(r.ctl)}</td>
+        <td class="num ${r.tsb >= 0 ? 'pos' : 'neg'}">${fmt(r.tsb)}</td>
+        <td class="num">
+          <button class="btn btn-ghost btn-sm" data-edit="${t.id}">Bearbeiten</button>
+          <button class="btn btn-danger btn-sm" data-del="${t.id}">Löschen</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Klicks auf "Bearbeiten"/"Löschen" – ein einziger Listener für die ganze Tabelle (Event-Delegation)
+  $('hist-body').addEventListener('click', e => {
+    const editBtn = e.target.closest('[data-edit]');
+    const delBtn = e.target.closest('[data-del]');
+    if (editBtn) openEdit(editBtn.dataset.edit);        // Dialog öffnen
+    if (delBtn) {
+      const t = trainings.find(x => x.id === delBtn.dataset.del);
+      // Sicherheitsabfrage vor dem Löschen
+      if (t && confirm(`Training vom ${fmtDate(t.date)} (${t.sport}) wirklich löschen?`)) {
+        trainings = trainings.filter(x => x.id !== t.id); // Training aus der Liste entfernen
+        saveTrainings(); renderHistory(); renderKpis();
+        toast('Training gelöscht');
+      }
+    }
+  });
+
+  // Öffnet den Bearbeiten-Dialog und füllt ihn mit den Werten des Trainings
+  function openEdit(id) {
+    const t = trainings.find(x => x.id === id);
+    if (!t) return;
+    editId = id;                                        // merken, welches Training bearbeitet wird
+    fillSportSelect($('e-sport'), t.sport);
+    $('e-date').value = t.date;
+    $('e-dur').value = t.duration;
+    $('e-dist').value = t.distance ? String(t.distance).replace('.', ',') : ''; // mit Dezimalkomma anzeigen
+    $('e-rpe').value = t.rpe;
+    $('dlg-edit').showModal();                          // Dialog anzeigen
+  }
+  $('e-cancel').addEventListener('click', () => $('dlg-edit').close()); // Abbrechen schließt den Dialog
+
+  // Änderungen aus dem Dialog speichern
+  $('form-edit').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = readForm('e');
+    const err = validate(v);
+    if (err) return toast(err, true);
+    const t = trainings.find(x => x.id === editId);
+    if (!t) return;
+    // Gleiche Sportart -> alter Faktor bleibt; andere Sportart -> aktueller Faktor dieser Sportart
+    const factor = (v.sport === t.sport) ? t.factor : sportFactor(v.sport);
+    Object.assign(t, { date: v.date, sport: v.sport, duration: v.dur, distance: v.dist, rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor) });
+    saveTrainings();
+    $('dlg-edit').close();
+    renderHistory(); renderKpis();
+    toast('Änderungen gespeichert');
+  });
+
+  /* ==========================================================================
+     8. TAB 3 – FITNESS CHART
+     ========================================================================== */
+
+  // Klick auf einen Zeitraum-Button ("30 Tage", "90 Tage", ...)
+  document.getElementById('range-chips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chartRange = Number(chip.dataset.range);            // gewählte Tage merken
+    document.querySelectorAll('#range-chips .chip').forEach(c => c.classList.toggle('active', c === chip));
+    renderChart();
+  });
+
+  // Erzeugt Farbskala (Gauge) und Legende einmalig aus der ZONES-Liste
+  function buildZoneLegend() {
+    // Jedes Segment ist so breit wie seine TSB-Spanne (flex = Spannweite)
+    $('gauge').innerHTML = ZONES.map((z, i) => {
+      const lo = i === 0 ? GAUGE_MIN : ZONES[i - 1].max;        // untere Grenze (erste Zone: Skalenanfang)
+      const hi = z.max === Infinity ? GAUGE_MAX : z.max;        // obere Grenze (letzte Zone: Skalenende)
+      return `<div style="flex:${hi - lo};background:${z.color}"></div>`;
+    }).join('');
+    // Legende: farbiger Punkt + Name + Wertebereich
+    $('zone-legend').innerHTML = ZONES.map(z =>
+      `<span><i style="background:${z.color}"></i>${z.short} (${z.range})</span>`
+    ).join('');
+  }
+
+  // Schreibt die Formeinschätzung (Text, Farbe, Marker) anhand des TSB von heute
+  function renderAssessment() {
+    const { days } = computeSeries(trainings);
+    if (!days.length) {                                         // keine Daten: Ausgangszustand anzeigen
+      $('fs-tsb').textContent = '–'; $('fs-tsb').style.color = '';
+      $('fs-title').textContent = 'Noch keine Daten'; $('fs-title').style.color = '';
+      $('fs-desc').textContent = 'Erfasse zuerst ein Training, dann erscheint hier deine Einschätzung.';
+      $('fs-box').style.borderLeftColor = '';
+      $('gauge-marker').style.left = '0%';
+      return;
+    }
+    const t = days[days.length - 1];                            // letzter Tag = heute
+    const zone = ZONES.find(z => t.tsb < z.max);                // erste Zone, deren Obergrenze über dem TSB liegt
+    $('fs-tsb').textContent = fmt(t.tsb);
+    $('fs-tsb').style.color = zone.color;
+    $('fs-title').textContent = zone.title;
+    $('fs-title').style.color = zone.color;
+    $('fs-desc').textContent = zone.desc;
+    $('fs-box').style.borderLeftColor = zone.color;
+    // Markerposition in Prozent auf der Skala (0 % = GAUGE_MIN, 100 % = GAUGE_MAX), begrenzt auf 0–100
+    const pct = Math.max(0, Math.min(100, (t.tsb - GAUGE_MIN) / (GAUGE_MAX - GAUGE_MIN) * 100));
+    $('gauge-marker').style.left = pct + '%';
+  }
+
+  /*
+    Eigenes Chart.js-Plugin: zeichnet die Formzonen als farbige Hintergrundbänder.
+    - Läuft VOR dem eigentlichen Zeichnen ("beforeDraw"), also hinter Gitter und Linien.
+    - Die Bänder gelten für die TSB-Werte auf der Y-Achse (alle Linien teilen sich dieselbe Achse).
+    - Der Zonenname wird oben rechts in jedem Band eingeblendet, wenn genug Platz ist.
+  */
+  const zoneBands = {
+    id: 'zoneBands',
+    beforeDraw(chart) {
+      const { ctx, chartArea, scales } = chart;                 // Zeichenkontext, Diagrammfläche, Achsen
+      if (!chartArea || !scales.y) return;                      // noch nicht bereit -> nichts tun
+      const y = scales.y;                                       // Y-Achse (rechnet Wert -> Pixel)
+      ctx.save();                                               // Zeichenzustand sichern
+      ZONES.forEach((z, i) => {
+        const lower = i === 0 ? -Infinity : ZONES[i - 1].max;   // untere Grenze der Zone
+        const upper = z.max;                                    // obere Grenze der Zone
+        // Wert -> Pixel: größere Werte liegen weiter OBEN (kleinere Pixel-Y). Unbegrenzte Seiten reichen bis zum Rand.
+        let yTop = upper === Infinity ? chartArea.top : y.getPixelForValue(upper);
+        let yBottom = lower === -Infinity ? chartArea.bottom : y.getPixelForValue(lower);
+        // Auf die Diagrammfläche begrenzen, damit nichts außerhalb gemalt wird
+        yTop = Math.max(chartArea.top, Math.min(chartArea.bottom, yTop));
+        yBottom = Math.max(chartArea.top, Math.min(chartArea.bottom, yBottom));
+        if (yBottom - yTop <= 0) return;                        // Zone liegt komplett außerhalb des sichtbaren Bereichs
+        ctx.fillStyle = hexToRgba(z.color, 0.12);               // Zonenfarbe, stark durchsichtig
+        ctx.fillRect(chartArea.left, yTop, chartArea.right - chartArea.left, yBottom - yTop); // Rechteck über die volle Breite
+        if (yBottom - yTop >= 20) {                             // Beschriftung nur, wenn das Band hoch genug ist
+          ctx.fillStyle = hexToRgba(z.color, 0.95);
+          ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, sans-serif';
+          ctx.textAlign = 'right';                              // rechtsbündig
+          ctx.textBaseline = 'top';
+          ctx.fillText(z.short, chartArea.right - 8, yTop + 5); // Text oben rechts im Band
+        }
+      });
+      ctx.restore();                                            // Zeichenzustand zurücksetzen
+    }
+  };
+
+  // Zeichnet das Liniendiagramm neu (CTL, ATL, TSB) plus die Formeinschätzung
+  function renderChart() {
+    renderAssessment();                                         // Textteil immer mit aktualisieren
+    const msg = $('chart-msg');
+    if (typeof Chart === 'undefined') {                         // Chart.js nicht geladen (z. B. offline)
+      msg.textContent = 'Chart.js konnte nicht geladen werden (Internetverbindung prüfen).';
+      return;
+    }
+    let { days } = computeSeries(trainings);
+    if (!days.length) {                                         // keine Daten -> Hinweis, altes Diagramm entfernen
+      msg.textContent = 'Noch keine Daten – erfasse zuerst ein Training.';
+      if (chart) { chart.destroy(); chart = null; }
+      return;
+    }
+    msg.textContent = 'CTL = Fitness (42 Tage) · ATL = Ermüdung (7 Tage) · TSB = Form (CTL − ATL). Die farbigen Bänder zeigen die Formzonen für den TSB.';
+    if (chartRange > 0) days = days.slice(-chartRange);         // nur die letzten N Tage anzeigen
+
+    const labels = days.map(d => fmtDate(d.date).slice(0, 6));  // X-Achse: "TT.MM."
+    const r1 = n => Math.round(n * 10) / 10;                    // auf 1 Nachkommastelle runden
+    const data = {
+      labels,
+      datasets: [
+        // CTL (Fitness) – blaue Linie
+        { label: 'CTL (Fitness)', data: days.map(d => r1(d.ctl)), borderColor: '#2f6fed', tension: .3, pointRadius: 0, borderWidth: 2.5 },
+        // ATL (Ermüdung) – orange Linie
+        { label: 'ATL (Ermüdung)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2.5 },
+        // TSB (Form) – dunkle, gestrichelte Linie (bewusst neutral, damit sie auf allen Zonenfarben gut lesbar ist)
+        { label: 'TSB (Form)', data: days.map(d => r1(d.tsb)), borderColor: '#1f2a3d', borderDash: [6, 4], tension: .3, pointRadius: 0, borderWidth: 2 }
+      ]
+    };
+    const options = {
+      responsive: true, maintainAspectRatio: false,             // Diagramm füllt den Container (Höhe über CSS)
+      interaction: { mode: 'index', intersect: false },         // Tooltip zeigt alle drei Werte des Tages
+      plugins: {
+        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
+        tooltip: {
+          callbacks: {
+            title: items => fmtDate(days[items[0].dataIndex].date),            // Tooltip-Titel: volles Datum
+            label: c => ' ' + c.dataset.label + ': ' + fmt(c.parsed.y)          // Werte mit Dezimalkomma
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 0 } },
+        // suggestedMin/Max sorgen dafür, dass die Zonen von -35 bis +25 (fast) immer sichtbar sind
+        y: { grid: { color: '#e9eef6' }, title: { display: true, text: 'Punkte' }, suggestedMin: -35, suggestedMax: 25 }
+      }
+    };
+    if (chart) chart.destroy();                                  // altes Diagramm entfernen (sonst Fehler/Überlagerung)
+    chart = new Chart($('fitness-chart'), { type: 'line', data, options, plugins: [zoneBands] }); // neu zeichnen, Zonen-Plugin aktivieren
+  }
+
+  /* ==========================================================================
+     9. TAB 4 – EINSTELLUNGEN
+     ========================================================================== */
+
+  // Zeichnet die editierbare Tabelle der Sportarten.
+  // data-i = Position in der Liste, data-field = welches Feld (name/factor)
+  function renderSports() {
+    $('sport-body').innerHTML = sports.map((s, i) => `
+      <tr class="settings-row">
+        <td><input type="text" value="${esc(s.name)}" data-i="${i}" data-field="name"></td>
+        <td><input type="text" inputmode="decimal" value="${esc(fmtFactor(s.factor))}" data-i="${i}" data-field="factor"></td>
+        <td class="num"><button class="btn btn-danger btn-sm" data-remove="${i}">Löschen</button></td>
+      </tr>`).join('') || '<tr><td colspan="3" class="empty">Keine Sportarten vorhanden.</td></tr>';
+  }
+
+  // Änderung in einem Eingabefeld der Tabelle (wird beim Verlassen des Feldes bzw. mit Enter ausgelöst)
+  $('sport-body').addEventListener('change', e => {
+    const inp = e.target.closest('input[data-i]');
+    if (!inp) return;
+    const i = Number(inp.dataset.i);
+    const s = sports[i];
+    if (inp.dataset.field === 'name') {
+      const name = inp.value.trim();
+      if (!name) { toast('Name darf nicht leer sein.', true); inp.value = s.name; return; }  // leer nicht erlaubt
+      // Doppelte Namen verhindern (Groß-/Kleinschreibung egal)
+      if (sports.some((x, j) => j !== i && x.name.toLowerCase() === name.toLowerCase())) {
+        toast('Diese Sportart existiert bereits.', true); inp.value = s.name; return;
+      }
+      trainings.forEach(t => { if (t.sport === s.name) t.sport = name; }); // bestehende Trainings mit umbenennen
+      s.name = name;
+      saveTrainings();
+    } else {
+      const f = parseNum(inp.value);
+      if (!(f > 0)) { toast('Ungültiger Sportfaktor.', true); inp.value = fmtFactor(s.factor); return; } // muss > 0 sein
+      s.factor = f;
+      inp.value = fmtFactor(f);                                              // schön formatiert zurückschreiben
+    }
+    saveSports();
+    refreshSportSelects();                                                   // Dropdown im Erfassen-Tab aktualisieren
+    toast('Gespeichert');
+  });
+
+  // Klick auf "Löschen" in der Sportarten-Tabelle
+  $('sport-body').addEventListener('click', e => {
+    const btn = e.target.closest('[data-remove]');
+    if (!btn) return;
+    const s = sports[Number(btn.dataset.remove)];
+    if (confirm(`Sportart „${s.name}“ löschen? Bereits erfasste Trainings bleiben erhalten.`)) {
+      sports.splice(Number(btn.dataset.remove), 1);                          // aus der Liste entfernen
+      saveSports(); renderSports(); refreshSportSelects();
+    }
+  });
+
+  // Neue Sportart hinzufügen
+  $('btn-add-sport').addEventListener('click', () => {
+    const name = $('n-name').value.trim();
+    const f = parseNum($('n-factor').value);
+    if (!name) return toast('Bitte einen Namen eingeben.', true);
+    if (!(f > 0)) return toast('Bitte einen gültigen Sportfaktor eingeben.', true);
+    if (sports.some(s => s.name.toLowerCase() === name.toLowerCase())) return toast('Diese Sportart existiert bereits.', true);
+    sports.push({ name, factor: f });                                        // ans Ende der Liste
+    saveSports();
+    $('n-name').value = ''; $('n-factor').value = '';                        // Eingabefelder leeren
+    renderSports(); refreshSportSelects();
+    toast('Sportart hinzugefügt');
+  });
+
+  // Dropdown im Erfassen-Tab neu füllen und die bisherige Auswahl möglichst beibehalten
+  function refreshSportSelects() {
+    const cur = $('a-sport').value;
+    fillSportSelect($('a-sport'), cur && sports.some(s => s.name === cur) ? cur : null);
+    updatePreview();
+  }
+
+  /* ---------- Export / Import / Zurücksetzen (JSON-Datensicherung) ---------- */
+
+  // Export: Sportarten + Trainings als JSON-Datei herunterladen
+  $('btn-export').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify({ sports, trainings }, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'fitness-daten-' + todayISO() + '.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // Import: Button öffnet den (versteckten) Datei-Dialog
+  $('btn-import').addEventListener('click', () => $('file-import').click());
+  // Gewählte Datei einlesen
+  $('file-import').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const d = JSON.parse(reader.result);                                  // Text -> Objekt
+        if (!Array.isArray(d.sports) || !Array.isArray(d.trainings)) throw new Error(); // Format prüfen
+        if (!confirm('Vorhandene Daten werden durch den Import ersetzt. Fortfahren?')) return;
+        sports = d.sports; trainings = d.trainings;                           // Daten übernehmen
+        saveSports(); saveTrainings();
+        renderSports(); refreshSportSelects(); renderKpis();
+        toast('Import erfolgreich');
+      } catch (err) { toast('Ungültige Datei.', true); }                      // kaputte/fremde Datei
+    };
+    reader.readAsText(file);
+    e.target.value = '';                                                      // Feld zurücksetzen, damit dieselbe Datei erneut wählbar ist
+  });
+
+  // Alles zurücksetzen (Startwerte, keine Trainings)
+  $('btn-reset').addEventListener('click', () => {
+    if (!confirm('Wirklich ALLE Trainings und Sportarten zurücksetzen?')) return;
+    sports = DEFAULT_SPORTS.map(s => ({ ...s }));
+    trainings = [];
+    saveSports(); saveTrainings();
+    renderSports(); refreshSportSelects(); renderKpis();
+    toast('Zurückgesetzt');
+  });
+
+  /* ==========================================================================
+     10. START (Initialisierung beim Laden der Seite)
+     ========================================================================== */
+  $('a-date').value = todayISO();   // Datum standardmäßig auf heute setzen
+  fillSportSelect($('a-sport'));    // Sportart-Dropdown befüllen
+  buildZoneLegend();                // Farbskala und Legende der Formzonen aufbauen
+  renderSports();                   // Einstellungs-Tabelle zeichnen
+  renderKpis();                     // Kennzahlen oben füllen
+  updatePreview();                  // Vorschau initialisieren
+})();
+</script>
+</body>
+</html>
