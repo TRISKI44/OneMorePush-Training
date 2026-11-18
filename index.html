@@ -165,7 +165,8 @@
   .chart-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; } /* Zeitraum-Auswahl */
   .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: var(--muted); }
   .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .chart-box { position: relative; height: 420px; } /* Chart.js braucht einen Container mit fester Höhe */
+  .chart-box { position: relative; height: 320px; } /* Chart.js braucht einen Container mit fester Höhe */
+  .chart-box.form-box { height: 200px; margin-top: 4px; } /* Form-Diagramm darunter, niedriger */
 
   /* Statuskasten: TSB-Zahl links, Titel + Erklärung rechts. Farbe wird per JS gesetzt. */
   .fs-box { display: flex; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 12px; border-left: 6px solid var(--muted); background: #f6f8fc; margin-bottom: 22px; }
@@ -219,7 +220,8 @@
     .kpis { grid-template-columns: 1fr; }              /* KPI-Karten untereinander */
     .preview { grid-template-columns: repeat(2, 1fr); }
     .add-row { grid-template-columns: 1fr; }
-    .chart-box { height: 320px; }                      /* Chart niedriger */
+    .chart-box { height: 240px; }                      /* Chart niedriger */
+    .chart-box.form-box { height: 170px; }
     .kpi .value { font-size: 1.4rem; }
     .fs-box { flex-direction: column; align-items: flex-start; } /* Statuskasten untereinander */
   }
@@ -344,8 +346,9 @@
         <button class="chip" data-range="365">1 Jahr</button>
         <button class="chip" data-range="0">Alles</button>
       </div>
-      <!-- Die Zeichenfläche (canvas) für Chart.js -->
+      <!-- Zwei Zeichenflächen (canvas) für Chart.js: oben Fitness/Ermüdung, unten Form mit Zonen -->
       <div class="chart-box"><canvas id="fitness-chart"></canvas></div>
+      <div class="chart-box form-box"><canvas id="form-chart"></canvas></div>
       <p class="hint" id="chart-msg"></p>
     </div>
 
@@ -498,7 +501,8 @@
   let sports = load(KEY_SPORTS, null) || DEFAULT_SPORTS.map(s => ({ ...s })); // gespeicherte Sportarten, sonst Kopie der Startwerte
   let trainings = load(KEY_TRAININGS, []); // gespeicherte Trainings, sonst leere Liste
   let editId = null;       // ID des Trainings, das gerade im Dialog bearbeitet wird
-  let chart = null;        // Chart.js-Instanz (damit wir sie vor dem Neuzeichnen zerstören können)
+  let charts = [];         // Chart.js-Instanzen (Fitness + Form), damit wir sie vor dem Neuzeichnen zerstören können
+  let hoverIndex = null;   // Tag unter der Maus -> senkrechte Linie in beiden Diagrammen
   let chartRange = 90;     // gewählter Zeitraum im Chart in Tagen (0 = alles)
   let showAllWeeks = false; // Wochenübersicht: false = nur letzte 12 Wochen
 
@@ -558,6 +562,12 @@
 
   // "JJJJ-MM-TT" -> "TT.MM.JJJJ" für die Anzeige
   const fmtDate = iso => { const [y, m, d] = iso.split('-'); return d + '.' + m + '.' + y; };
+
+  // Wochentag-Kürzel (Mo, Di, ...). Tagesnummer 0 (1.1.1970) war ein Donnerstag -> (n+3) % 7 = 0 für Montag.
+  const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+  const weekday = iso => WEEKDAYS[(((toDayNum(iso) + 3) % 7) + 7) % 7];
+  // "JJJJ-MM-TT" -> "Mo 18.11.2026"
+  const fmtDateWd = iso => weekday(iso) + ' ' + fmtDate(iso);
 
   // Sportfaktor einer Sportart nachschlagen; unbekannte Sportart -> Faktor 1
   const sportFactor = name => { const s = sports.find(x => x.name === name); return s ? s.factor : 1; };
@@ -867,7 +877,7 @@
     body.innerHTML = sorted.map(t => {
       const r = map[t.date];                            // Werte des Trainingstages
       return `<tr>
-        <td>${fmtDate(t.date)}</td>
+        <td>${fmtDateWd(t.date)}</td>
         <td><span class="badge">${esc(t.sport)}</span></td>
         <td class="num">${t.duration ? fmt(t.duration, 0) + ' min' : '–'}</td>
         <td class="num">${t.distance ? fmt(t.distance, 1) + ' km' : '–'}</td>
@@ -892,7 +902,7 @@
     if (delBtn) {
       const t = trainings.find(x => x.id === delBtn.dataset.del);
       // Sicherheitsabfrage vor dem Löschen
-      if (t && confirm(`Training vom ${fmtDate(t.date)} (${t.sport}) wirklich löschen?`)) {
+      if (t && confirm(`Training vom ${fmtDateWd(t.date)} (${t.sport}) wirklich löschen?`)) {
         trainings = trainings.filter(x => x.id !== t.id); // Training aus der Liste entfernen
         saveTrainings(); renderHistory(); renderKpis();
         toast('Training gelöscht');
@@ -986,7 +996,7 @@
   /*
     Eigenes Chart.js-Plugin: zeichnet die Formzonen als farbige Hintergrundbänder.
     - Läuft VOR dem eigentlichen Zeichnen ("beforeDraw"), also hinter Gitter und Linien.
-    - Die Bänder gelten für die TSB-Werte auf der Y-Achse (alle Linien teilen sich dieselbe Achse).
+    - Wird nur im unteren Form-Diagramm (TSB) verwendet.
     - Der Zonenname wird oben rechts in jedem Band eingeblendet, wenn genug Platz ist.
   */
   const zoneBands = {
@@ -1020,7 +1030,37 @@
     }
   };
 
-  // Zeichnet das Liniendiagramm neu (CTL, ATL, TSB) plus die Formeinschätzung
+  /*
+    Eigenes Chart.js-Plugin: senkrechte Linie am Tag unter der Maus – in BEIDEN Diagrammen gleichzeitig,
+    damit man Fitness/Ermüdung und Form desselben Tages direkt vergleichen kann.
+  */
+  const crosshair = {
+    id: 'crosshair',
+    afterDatasetsDraw(chart) {
+      if (hoverIndex === null || !chart.scales.x) return;
+      const x = chart.scales.x.getPixelForValue(hoverIndex);
+      const { ctx, chartArea } = chart;
+      if (x < chartArea.left || x > chartArea.right) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(31,42,61,.55)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
+      ctx.restore();
+    },
+    afterEvent(chart, args) {
+      const e = args.event;
+      let idx = null;
+      if (e.type !== 'mouseout') {
+        const el = chart.getElementsAtEventForMode(e, 'index', { intersect: false }, false)[0];
+        idx = el ? el.index : null;
+      }
+      if (idx !== hoverIndex) {                                 // geändert -> beide Diagramme neu zeichnen
+        hoverIndex = idx;
+        charts.forEach(c => c.draw());
+      }
+    }
+  };
+
+  // Zeichnet die zwei Diagramme neu (oben CTL + ATL, unten TSB mit Formzonen) plus die Formeinschätzung
   function renderChart() {
     renderAssessment();                                         // Textteil immer mit aktualisieren
     const msg = $('chart-msg');
@@ -1029,47 +1069,82 @@
       return;
     }
     let { days } = computeSeries(trainings);
-    if (!days.length) {                                         // keine Daten -> Hinweis, altes Diagramm entfernen
+    charts.forEach(c => c.destroy()); charts = []; hoverIndex = null; // alte Diagramme entfernen (sonst Überlagerung)
+    if (!days.length) {                                         // keine Daten -> Hinweis
       msg.textContent = 'Noch keine Daten – erfasse zuerst ein Training.';
-      if (chart) { chart.destroy(); chart = null; }
       return;
     }
-    msg.textContent = 'CTL = Fitness (42 Tage) · ATL = Ermüdung (7 Tage) · TSB = Form (CTL − ATL). Die farbigen Bänder zeigen die Formzonen für den TSB.';
+    msg.textContent = 'Oben: CTL = Fitness (42 Tage) und ATL = Ermüdung (7 Tage). Unten: TSB = Form (CTL − ATL) mit den Formzonen.';
     if (chartRange > 0) days = days.slice(-chartRange);         // nur die letzten N Tage anzeigen
 
-    const labels = days.map(d => fmtDate(d.date).slice(0, 6));  // X-Achse: "TT.MM."
+    const labels = days.map(d => weekday(d.date) + ' ' + fmtDate(d.date).slice(0, 6)); // X-Achse: "Mo 18.11."
     const r1 = n => Math.round(n * 10) / 10;                    // auf 1 Nachkommastelle runden
-    const data = {
-      labels,
-      datasets: [
-        // CTL (Fitness) – blaue Linie
-        { label: 'CTL (Fitness)', data: days.map(d => r1(d.ctl)), borderColor: '#2f6fed', tension: .3, pointRadius: 0, borderWidth: 2.5 },
-        // ATL (Ermüdung) – orange Linie
-        { label: 'ATL (Ermüdung)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2.5 },
-        // TSB (Form) – grüne Linie
-        { label: 'TSB (Form)', data: days.map(d => r1(d.tsb)), borderColor: '#22a35a', tension: .3, pointRadius: 0, borderWidth: 2.5 }
-      ]
-    };
-    const options = {
-      responsive: true, maintainAspectRatio: false,             // Diagramm füllt den Container (Höhe über CSS)
-      interaction: { mode: 'index', intersect: false },         // Tooltip zeigt alle drei Werte des Tages
-      plugins: {
-        legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
-        tooltip: {
-          callbacks: {
-            title: items => fmtDate(days[items[0].dataIndex].date),            // Tooltip-Titel: volles Datum
-            label: c => ' ' + c.dataset.label + ': ' + fmt(c.parsed.y)          // Werte mit Dezimalkomma
-          }
-        }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, maxRotation: 0 } },
-        // suggestedMin/Max sorgen dafür, dass die Zonen von -35 bis +25 (fast) immer sichtbar sind
-        y: { grid: { color: '#e9eef6' }, title: { display: true, text: 'Punkte' }, suggestedMin: -35, suggestedMax: 25 }
+    const AXIS_W = 52;                                          // feste Breite der Y-Achse -> beide Diagramme exakt untereinander
+    const grid = { color: '#edf1f7' };                          // feine, helle Gitterlinien (waagerecht)
+    // Senkrechte Gitterlinien nur montags -> eine Linie pro Woche
+    const xGrid = { color: c => (c.index !== undefined && days[c.index] && weekday(days[c.index].date) === 'Mo') ? '#e3e9f2' : 'transparent' };
+    // Datumsbeschriftung: auf schmalen Bildschirmen (Handy) weniger Beschriftungen
+    const xTicks = { maxTicksLimit: window.innerWidth < 600 ? 4 : 12, maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90' };
+    const tooltip = {
+      callbacks: {
+        title: items => fmtDateWd(days[items[0].dataIndex].date),           // Tooltip-Titel: "Mo 18.11.2026"
+        label: c => ' ' + c.dataset.label + ': ' + fmt(c.parsed.y)          // Werte mit Dezimalkomma
       }
     };
-    if (chart) chart.destroy();                                  // altes Diagramm entfernen (sonst Fehler/Überlagerung)
-    chart = new Chart($('fitness-chart'), { type: 'line', data, options, plugins: [zoneBands] }); // neu zeichnen, Zonen-Plugin aktivieren
+    const base = {
+      responsive: true, maintainAspectRatio: false,             // Diagramm füllt den Container (Höhe über CSS)
+      animation: false,
+      interaction: { mode: 'index', intersect: false },         // Tooltip zeigt alle Werte des Tages
+      layout: { padding: { right: 8 } }
+    };
+
+    // --- Oberes Diagramm: Fitness (CTL, blaue Fläche) und Ermüdung (ATL, orange Linie) ---
+    charts.push(new Chart($('fitness-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Fitness (CTL)', data: days.map(d => r1(d.ctl)), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.10)',
+            fill: 'origin', tension: .3, pointRadius: 0, borderWidth: 2 },
+          { label: 'Ermüdung (ATL)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2 }
+        ]
+      },
+      options: {
+        ...base,
+        plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip },
+        scales: {
+          x: { grid: xGrid, ticks: { display: false } },               // Datum nur unten im Form-Diagramm beschriften
+          y: { beginAtZero: true, grid, ticks: { maxTicksLimit: 10, color: '#6b7a90' },
+               title: { display: true, text: 'Trainingsbelastung' }, afterFit: s => { s.width = AXIS_W; } }
+        }
+      },
+      plugins: [crosshair]
+    }));
+
+    // --- Unteres Diagramm: Form (TSB) mit eingefärbten Formzonen ---
+    const bounds = ZONES.slice(0, -1).map(z => z.max);          // Zonengrenzen, z. B. -30, -10, 5, 20
+    charts.push(new Chart($('form-chart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Form (TSB)', data: days.map(d => r1(d.tsb)), borderColor: '#22a35a', tension: .3, pointRadius: 0, borderWidth: 2.5 }
+        ]
+      },
+      options: {
+        ...base,
+        plugins: { legend: { display: false }, tooltip },
+        scales: {
+          x: { grid: xGrid, ticks: xTicks },
+          // Achse mindestens von -35 bis +25, damit alle Zonen sichtbar sind; beschriftet werden die Zonengrenzen
+          y: { suggestedMin: -35, suggestedMax: 25, grid: { color: '#dfe5ee' }, ticks: { color: '#6b7a90' },
+               title: { display: true, text: 'Form' },
+               afterBuildTicks: ax => { ax.ticks = bounds.filter(v => v >= ax.min && v <= ax.max).map(value => ({ value })); },
+               afterFit: s => { s.width = AXIS_W; } }
+        }
+      },
+      plugins: [zoneBands, crosshair]                           // Zonen nur hier
+    }));
   }
 
   /* ==========================================================================
