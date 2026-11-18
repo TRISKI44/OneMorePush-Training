@@ -167,6 +167,8 @@
   .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
   .chart-box { position: relative; height: 320px; } /* Chart.js braucht einen Container mit fester Höhe */
   .chart-box.form-box { height: 200px; margin-top: 4px; } /* Form-Diagramm darunter, niedriger */
+  .date-range { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; } /* Von/Bis-Kalender */
+  .date-range .field { flex: 0 1 180px; }
 
   /* Statuskasten: TSB-Zahl links, Titel + Erklärung rechts. Farbe wird per JS gesetzt. */
   .fs-box { display: flex; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 12px; border-left: 6px solid var(--muted); background: #f6f8fc; margin-bottom: 22px; }
@@ -272,6 +274,7 @@
         <!-- Distanz als Text, damit auch ein Komma (10,5) eingegeben werden kann -->
         <div class="field"><label for="a-dist">Distanz (km)</label><input type="text" id="a-dist" inputmode="decimal" placeholder="z. B. 10,5"></div>
         <div class="field full"><label for="a-rpe">RPE (1–10)</label><input type="number" id="a-rpe" min="1" max="10" step="1" inputmode="numeric" placeholder="1 = sehr leicht, 10 = maximal" required></div>
+        <div class="field full"><label for="a-desc">Beschreibung (optional)</label><input type="text" id="a-desc" maxlength="120" placeholder="z. B. lockerer Lauf, Schwelleneinheit, Race Pace"></div>
 
         <!-- Live-Vorschau: wird bei jeder Eingabe neu berechnet (siehe updatePreview) -->
         <div class="full preview" id="preview">
@@ -319,7 +322,7 @@
         <table>
           <thead>
             <tr>
-              <th>Datum</th><th>Sportart</th>
+              <th>Datum</th><th>Sportart</th><th>Beschreibung</th>
               <th class="num">Dauer</th><th class="num">Distanz</th><th class="num">RPE</th>
               <th class="num">Load</th><th class="num">ATL</th><th class="num">CTL</th><th class="num">TSB</th>
               <th></th>
@@ -345,6 +348,11 @@
         <button class="chip" data-range="180">6 Monate</button>
         <button class="chip" data-range="365">1 Jahr</button>
         <button class="chip" data-range="0">Alles</button>
+      </div>
+      <!-- Eigener Zeitraum per Kalender: Start- und Enddatum -->
+      <div class="date-range">
+        <div class="field"><label for="c-from">Von</label><input type="date" id="c-from"></div>
+        <div class="field"><label for="c-to">Bis</label><input type="date" id="c-to"></div>
       </div>
       <!-- Zwei Zeichenflächen (canvas) für Chart.js: oben Fitness/Ermüdung, unten Form mit Zonen -->
       <div class="chart-box"><canvas id="fitness-chart"></canvas></div>
@@ -425,6 +433,7 @@
       <div class="field"><label for="e-dur">Dauer (min)</label><input type="number" id="e-dur" min="1" step="1" required></div>
       <div class="field"><label for="e-dist">Distanz (km)</label><input type="text" id="e-dist" inputmode="decimal"></div>
       <div class="field full"><label for="e-rpe">RPE (1–10)</label><input type="number" id="e-rpe" min="1" max="10" step="1" required></div>
+      <div class="field full"><label for="e-desc">Beschreibung (optional)</label><input type="text" id="e-desc" maxlength="120" placeholder="z. B. lockerer Lauf, Schwelleneinheit, Race Pace"></div>
       <div class="full actions" style="justify-content:flex-end">
         <button type="button" class="btn btn-ghost" id="e-cancel">Abbrechen</button>
         <button type="submit" class="btn btn-primary">Speichern</button>
@@ -503,7 +512,7 @@
   let editId = null;       // ID des Trainings, das gerade im Dialog bearbeitet wird
   let charts = [];         // Chart.js-Instanzen (Fitness + Form), damit wir sie vor dem Neuzeichnen zerstören können
   let hoverIndex = null;   // Tag unter der Maus -> senkrechte Linie in beiden Diagrammen
-  let chartRange = 90;     // gewählter Zeitraum im Chart in Tagen (0 = alles)
+  let chartRange = 90;     // gewählter Zeitraum im Chart in Tagen (0 = alles, 'custom' = Von/Bis-Kalender)
   let showAllWeeks = false; // Wochenübersicht: false = nur letzte 12 Wochen
 
   /* ==========================================================================
@@ -690,8 +699,9 @@
     const rpe = parseNum($(prefix + '-rpe').value);
     const distRaw = $(prefix + '-dist').value.trim();
     const dist = distRaw === '' ? 0 : parseNum(distRaw); // Distanz ist optional: leer = 0
-    if (isRestSport(sport)) return { date, sport, dur: 0, rpe: 0, dist: 0, rest: true }; // Ruhetag/Krank: keine Werte
-    return { date, sport, dur, rpe, dist };
+    const desc = $(prefix + '-desc').value.trim();        // Beschreibung ist optional
+    if (isRestSport(sport)) return { date, sport, dur: 0, rpe: 0, dist: 0, desc, rest: true }; // Ruhetag/Krank: keine Werte
+    return { date, sport, dur, rpe, dist, desc };
   }
 
   // Bei Ruhetag/Krank die Felder Dauer, Distanz und RPE sperren und leeren
@@ -749,10 +759,10 @@
     const factor = sportFactor(v.sport);         // Faktor JETZT festhalten (spätere Änderungen betreffen dieses Training nicht)
     trainings.push({
       id: uid(), date: v.date, sport: v.sport, duration: v.dur, distance: v.dist,
-      rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor)
+      rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc
     });
     saveTrainings();                             // in LocalStorage sichern
-    $('a-dur').value = ''; $('a-dist').value = ''; $('a-rpe').value = ''; // Felder leeren (Datum/Sportart bleiben)
+    $('a-dur').value = ''; $('a-dist').value = ''; $('a-rpe').value = ''; $('a-desc').value = ''; // Felder leeren (Datum/Sportart bleiben)
     toast(v.rest ? v.sport + ' gespeichert' : 'Training gespeichert');
     renderKpis(); updatePreview();
   });
@@ -843,13 +853,13 @@
   $('btn-csv').addEventListener('click', () => {
     if (!trainings.length) return toast('Keine Trainings zum Exportieren.', true);
     const { map } = computeSeries(trainings);
-    const rows = [['Datum', 'Sportart', 'Dauer (min)', 'Distanz (km)', 'RPE', 'Sportfaktor', 'Load', 'ATL', 'CTL', 'TSB']]; // Kopfzeile
+    const rows = [['Datum', 'Sportart', 'Beschreibung', 'Dauer (min)', 'Distanz (km)', 'RPE', 'Sportfaktor', 'Load', 'ATL', 'CTL', 'TSB']]; // Kopfzeile
     trainings.slice()                                                          // Kopie, damit das Original unsortiert bleibt
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) // älteste zuerst
       .forEach(t => {
         const r = map[t.date];                                                  // Tageswerte ATL/CTL/TSB
         rows.push([
-          fmtDate(t.date), csvText(t.sport), csvNum(t.duration), csvNum(t.distance || 0),
+          fmtDate(t.date), csvText(t.sport), csvText(t.desc || ''), csvNum(t.duration), csvNum(t.distance || 0),
           csvNum(t.rpe), csvNum(t.factor), csvNum(t.load, 1), csvNum(r.atl, 1), csvNum(r.ctl, 1), csvNum(r.tsb, 1)
         ]);
       });
@@ -869,7 +879,7 @@
     const { map } = computeSeries(trainings);          // Tageswerte für ATL/CTL/TSB
     const body = $('hist-body');
     if (!trainings.length) {
-      body.innerHTML = '<tr><td colspan="10" class="empty">Noch keine Trainings erfasst.</td></tr>';
+      body.innerHTML = '<tr><td colspan="11" class="empty">Noch keine Trainings erfasst.</td></tr>';
       return;
     }
     // Sortierung: nach Datum absteigend, bei gleichem Datum nach ID
@@ -879,6 +889,7 @@
       return `<tr>
         <td>${fmtDateWd(t.date)}</td>
         <td><span class="badge">${esc(t.sport)}</span></td>
+        <td>${t.desc ? esc(t.desc) : '<span style="color:var(--muted)">–</span>'}</td>
         <td class="num">${t.duration ? fmt(t.duration, 0) + ' min' : '–'}</td>
         <td class="num">${t.distance ? fmt(t.distance, 1) + ' km' : '–'}</td>
         <td class="num">${t.rpe ? fmt(t.rpe, 0) : '–'}</td>
@@ -920,6 +931,7 @@
     $('e-dur').value = t.duration;
     $('e-dist').value = t.distance ? String(t.distance).replace('.', ',') : ''; // mit Dezimalkomma anzeigen
     $('e-rpe').value = t.rpe;
+    $('e-desc').value = t.desc || '';
     updateRestFields('e');                              // bei Ruhetag/Krank Felder sperren
     $('dlg-edit').showModal();                         // Dialog anzeigen
   }
@@ -935,7 +947,7 @@
     if (!t) return;
     // Gleiche Sportart -> alter Faktor bleibt; andere Sportart -> aktueller Faktor dieser Sportart
     const factor = (v.sport === t.sport) ? t.factor : sportFactor(v.sport);
-    Object.assign(t, { date: v.date, sport: v.sport, duration: v.dur, distance: v.dist, rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor) });
+    Object.assign(t, { date: v.date, sport: v.sport, duration: v.dur, distance: v.dist, rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc });
     saveTrainings();
     $('dlg-edit').close();
     renderHistory(); renderKpis();
@@ -954,6 +966,13 @@
     document.querySelectorAll('#range-chips .chip').forEach(c => c.classList.toggle('active', c === chip));
     renderChart();
   });
+
+  // Von/Bis-Kalender geändert -> eigener Zeitraum, Zeitraum-Buttons abwählen
+  ['c-from', 'c-to'].forEach(id => $(id).addEventListener('change', () => {
+    chartRange = 'custom';
+    document.querySelectorAll('#range-chips .chip').forEach(c => c.classList.remove('active'));
+    renderChart();
+  }));
 
   // Erzeugt Farbskala (Gauge) und Legende einmalig aus der ZONES-Liste
   function buildZoneLegend() {
@@ -1074,8 +1093,23 @@
       msg.textContent = 'Noch keine Daten – erfasse zuerst ein Training.';
       return;
     }
-    msg.textContent = 'Oben: CTL = Fitness (42 Tage) und ATL = Ermüdung (7 Tage). Unten: TSB = Form (CTL − ATL) mit den Formzonen.';
-    if (chartRange > 0) days = days.slice(-chartRange);         // nur die letzten N Tage anzeigen
+    msg.textContent = 'Oben: CTL = Fitness (42 Tage) und ATL = Ermüdung (7 Tage). Unten: TSB = Form (CTL − ATL) mit den Formzonen. Maus über das Diagramm: Werte und Trainings des Tages.';
+    if (chartRange === 'custom') {
+      // Eigener Zeitraum: nur Tage zwischen Von und Bis (leeres Feld = keine Grenze).
+      // Die Werte selbst sind aus der ganzen Historie berechnet, nur die Anzeige ist begrenzt.
+      const from = $('c-from').value, to = $('c-to').value;
+      if (from && to && from > to) { msg.textContent = 'Das Von-Datum liegt nach dem Bis-Datum.'; return; }
+      days = days.filter(d => (!from || d.date >= from) && (!to || d.date <= to));
+      if (!days.length) { msg.textContent = 'Im gewählten Zeitraum gibt es keine Daten.'; return; }
+    } else {
+      if (chartRange > 0) days = days.slice(-chartRange);       // nur die letzten N Tage anzeigen
+      $('c-from').value = days[0].date;                         // Kalender zeigt den angezeigten Zeitraum
+      $('c-to').value = days[days.length - 1].date;
+    }
+
+    // Trainings je Tag für die Infobox (Tooltip)
+    const byDate = {};
+    trainings.forEach(t => (byDate[t.date] = byDate[t.date] || []).push(t));
 
     const labels = days.map(d => weekday(d.date) + ' ' + fmtDate(d.date).slice(0, 6)); // X-Achse: "Mo 18.11."
     const r1 = n => Math.round(n * 10) / 10;                    // auf 1 Nachkommastelle runden
@@ -1088,7 +1122,19 @@
     const tooltip = {
       callbacks: {
         title: items => fmtDateWd(days[items[0].dataIndex].date),           // Tooltip-Titel: "Mo 18.11.2026"
-        label: c => ' ' + c.dataset.label + ': ' + fmt(c.parsed.y)          // Werte mit Dezimalkomma
+        // Werte mit Dezimalkomma. Im Form-Diagramm zusätzlich CTL und ATL, damit alle drei Werte sichtbar sind.
+        label: c => {
+          const d = days[c.dataIndex];
+          if (c.chart.canvas.id === 'form-chart') return [' Fitness (CTL): ' + fmt(d.ctl), ' Ermüdung (ATL): ' + fmt(d.atl), ' Form (TSB): ' + fmt(d.tsb)];
+          const line = ' ' + c.dataset.label + ': ' + fmt(c.parsed.y);
+          return c.datasetIndex === 1 ? [line, ' Form (TSB): ' + fmt(d.tsb)] : line; // oben nach ATL auch den TSB zeigen
+        },
+        // Unter den Werten: Trainings des Tages (Sportart – Beschreibung · Load)
+        afterBody: items => {
+          const list = byDate[days[items[0].dataIndex].date] || [];
+          if (!list.length) return ['', 'Kein Training'];
+          return [''].concat(list.map(t => '• ' + t.sport + (t.desc ? ' – ' + t.desc : '') + ' · Load ' + fmt(t.load, 1)));
+        }
       }
     };
     const base = {
