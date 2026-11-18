@@ -280,7 +280,7 @@
         </div>
         <div class="full actions"><button type="submit" class="btn btn-accent">Training speichern</button></div>
       </form>
-      <p class="hint">Load = Dauer × RPE × Sportfaktor · ATL: 7-Tage-Zeitkonstante · CTL: 42-Tage-Zeitkonstante · TSB = CTL − ATL. Die Vorschau zeigt die Werte am Trainingstag inkl. dieses Trainings.</p>
+      <p class="hint">Load = Dauer × RPE × Sportfaktor × 0,1 · Ruhetag/Krank: Load 0, Dauer und RPE nicht nötig · ATL: 7-Tage-Zeitkonstante · CTL: 42-Tage-Zeitkonstante · TSB = CTL − ATL. Die Vorschau zeigt die Werte am Trainingstag inkl. dieses Trainings.</p>
     </div>
   </section>
 
@@ -458,8 +458,13 @@
     { name: 'MTB', factor: 0.9 },
     { name: 'Rennrad', factor: 0.85 },
     { name: 'Kraft', factor: 0.7 },
-    { name: 'Schwimmen', factor: 1.1 }
+    { name: 'Schwimmen', factor: 1.1 },
+    { name: 'Ruhetag', factor: 0 },   // Sportfaktor 0 = Ruhe-Eintrag: Load 0, Dauer/RPE nicht nötig
+    { name: 'Krank', factor: 0 }
   ];
+  // Diese Einträge werden einmalig auch bei bestehenden Daten ergänzt (siehe Start)
+  const REST_SPORTS = ['Ruhetag', 'Krank'];
+  const KEY_MIG_REST = 'ft_mig_rest_v1';
 
   // Millisekunden pro Tag – wird zum Rechnen mit Tagesnummern gebraucht
   const DAY = 86400000;
@@ -556,6 +561,8 @@
 
   // Sportfaktor einer Sportart nachschlagen; unbekannte Sportart -> Faktor 1
   const sportFactor = name => { const s = sports.find(x => x.name === name); return s ? s.factor : 1; };
+  // Ruhe-Eintrag (Ruhetag, Krank, ...) = Sportart mit Sportfaktor 0
+  const isRestSport = name => sportFactor(name) === 0;
 
   // Hex-Farbe (#rrggbb) + Transparenz -> "rgba(r,g,b,a)". Wird für die halbtransparenten Zonen im Chart gebraucht.
   const hexToRgba = (hex, alpha) => {
@@ -578,8 +585,15 @@
      4. BERECHNUNG (Load, ATL, CTL, TSB)
      ========================================================================== */
 
-  // Load = Dauer × RPE × Sportfaktor
-  const calcLoad = (dur, rpe, factor) => dur * rpe * factor;
+  // Load = Dauer × RPE × Sportfaktor × 0,1 (Skalierung, damit die Zahlen kleiner bleiben)
+  const LOAD_SCALE = 0.1;
+  const calcLoad = (dur, rpe, factor) => dur * rpe * factor * LOAD_SCALE;
+
+  // Alle gespeicherten Loads mit der aktuellen Formel neu berechnen (z. B. nach Formeländerung oder Import).
+  // Der beim Speichern festgehaltene Sportfaktor jedes Trainings bleibt erhalten.
+  function recalcLoads() {
+    trainings.forEach(t => { t.load = calcLoad(t.duration || 0, t.rpe || 0, t.factor || 0); });
+  }
 
   /*
     Berechnet die Tagesreihe für ATL, CTL und TSB.
@@ -666,13 +680,25 @@
     const rpe = parseNum($(prefix + '-rpe').value);
     const distRaw = $(prefix + '-dist').value.trim();
     const dist = distRaw === '' ? 0 : parseNum(distRaw); // Distanz ist optional: leer = 0
+    if (isRestSport(sport)) return { date, sport, dur: 0, rpe: 0, dist: 0, rest: true }; // Ruhetag/Krank: keine Werte
     return { date, sport, dur, rpe, dist };
+  }
+
+  // Bei Ruhetag/Krank die Felder Dauer, Distanz und RPE sperren und leeren
+  function updateRestFields(prefix) {
+    const rest = isRestSport($(prefix + '-sport').value);
+    ['-dur', '-dist', '-rpe'].forEach(f => {
+      const el = $(prefix + f);
+      el.disabled = rest;
+      if (rest) el.value = '';
+    });
   }
 
   // Prüft die Eingaben. Rückgabe: Fehlertext oder null, wenn alles passt.
   function validate(v) {
     if (!v.date) return 'Bitte ein Datum wählen.';
     if (!v.sport) return 'Bitte eine Sportart wählen (Einstellungen).';
+    if (v.rest) return null;                       // Ruhetag/Krank braucht keine weiteren Angaben
     if (!(v.dur > 0)) return 'Die Dauer muss größer als 0 sein.';
     if (isNaN(v.dist) || v.dist < 0) return 'Ungültige Distanz.';
     if (!(v.rpe >= 1 && v.rpe <= 10)) return 'RPE muss zwischen 1 und 10 liegen.';
@@ -683,14 +709,14 @@
   function updatePreview() {
     const v = readForm('a');
     // Solange Pflichtfelder fehlen: Platzhalter "–" anzeigen
-    if (!v.date || !(v.dur > 0) || !(v.rpe >= 1 && v.rpe <= 10) || !v.sport) {
+    if (!v.date || !v.sport || (!v.rest && (!(v.dur > 0) || !(v.rpe >= 1 && v.rpe <= 10)))) {
       ['pv-load', 'pv-ctl', 'pv-atl', 'pv-tsb'].forEach(i => $(i).textContent = '–');
       return;
     }
     const load = calcLoad(v.dur, v.rpe, sportFactor(v.sport));        // Load des neuen Trainings
     const hypo = trainings.concat([{ date: v.date, load }]);          // bestehende Trainings + "Gedanken-Training"
     const row = computeSeries(hypo).map[v.date];                      // Werte an diesem Tag nachschlagen
-    $('pv-load').textContent = fmt(load, 0);
+    $('pv-load').textContent = fmt(load, 1);
     $('pv-ctl').textContent = fmt(row.ctl);
     $('pv-atl').textContent = fmt(row.atl);
     $('pv-tsb').textContent = fmt(row.tsb);
@@ -700,6 +726,9 @@
     $(id).addEventListener('input', updatePreview);
     $(id).addEventListener('change', updatePreview);
   });
+  // Sportart gewechselt -> Felder für Ruhetag/Krank sperren bzw. freigeben
+  $('a-sport').addEventListener('change', () => { updateRestFields('a'); updatePreview(); });
+  $('e-sport').addEventListener('change', () => updateRestFields('e'));
 
   // Training speichern (Klick auf "Training speichern" bzw. Enter)
   $('form-add').addEventListener('submit', e => {
@@ -714,7 +743,7 @@
     });
     saveTrainings();                             // in LocalStorage sichern
     $('a-dur').value = ''; $('a-dist').value = ''; $('a-rpe').value = ''; // Felder leeren (Datum/Sportart bleiben)
-    toast('Training gespeichert');
+    toast(v.rest ? v.sport + ' gespeichert' : 'Training gespeichert');
     renderKpis(); updatePreview();
   });
 
@@ -757,7 +786,7 @@
       // Das zusätzliche "+7 ... %7" fängt negative Werte bei Daten vor 1970 ab.
       const start = n - ((((n + 3) % 7) + 7) % 7);                   // Tagesnummer des Montags dieser Woche
       const w = weeks[start] || (weeks[start] = { start, count: 0, minutes: 0, km: 0, load: 0 });
-      w.count++;                                                     // Anzahl Trainings
+      if (t.factor !== 0) w.count++;                                 // Anzahl Trainings (Ruhetag/Krank zählt nicht)
       w.minutes += t.duration;                                       // Minuten summieren
       w.km += t.distance || 0;                                       // Kilometer summieren
       w.load += t.load;                                              // Load summieren
@@ -840,10 +869,10 @@
       return `<tr>
         <td>${fmtDate(t.date)}</td>
         <td><span class="badge">${esc(t.sport)}</span></td>
-        <td class="num">${fmt(t.duration, 0)} min</td>
+        <td class="num">${t.duration ? fmt(t.duration, 0) + ' min' : '–'}</td>
         <td class="num">${t.distance ? fmt(t.distance, 1) + ' km' : '–'}</td>
-        <td class="num">${fmt(t.rpe, 0)}</td>
-        <td class="num"><strong>${fmt(t.load, 0)}</strong></td>
+        <td class="num">${t.rpe ? fmt(t.rpe, 0) : '–'}</td>
+        <td class="num"><strong>${fmt(t.load, 1)}</strong></td>
         <td class="num">${fmt(r.atl)}</td>
         <td class="num">${fmt(r.ctl)}</td>
         <td class="num ${r.tsb >= 0 ? 'pos' : 'neg'}">${fmt(r.tsb)}</td>
@@ -881,7 +910,8 @@
     $('e-dur').value = t.duration;
     $('e-dist').value = t.distance ? String(t.distance).replace('.', ',') : ''; // mit Dezimalkomma anzeigen
     $('e-rpe').value = t.rpe;
-    $('dlg-edit').showModal();                          // Dialog anzeigen
+    updateRestFields('e');                              // bei Ruhetag/Krank Felder sperren
+    $('dlg-edit').showModal();                         // Dialog anzeigen
   }
   $('e-cancel').addEventListener('click', () => $('dlg-edit').close()); // Abbrechen schließt den Dialog
 
@@ -1016,8 +1046,8 @@
         { label: 'CTL (Fitness)', data: days.map(d => r1(d.ctl)), borderColor: '#2f6fed', tension: .3, pointRadius: 0, borderWidth: 2.5 },
         // ATL (Ermüdung) – orange Linie
         { label: 'ATL (Ermüdung)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2.5 },
-        // TSB (Form) – dunkle, gestrichelte Linie (bewusst neutral, damit sie auf allen Zonenfarben gut lesbar ist)
-        { label: 'TSB (Form)', data: days.map(d => r1(d.tsb)), borderColor: '#1f2a3d', borderDash: [6, 4], tension: .3, pointRadius: 0, borderWidth: 2 }
+        // TSB (Form) – grüne Linie
+        { label: 'TSB (Form)', data: days.map(d => r1(d.tsb)), borderColor: '#22a35a', tension: .3, pointRadius: 0, borderWidth: 2.5 }
       ]
     };
     const options = {
@@ -1075,7 +1105,7 @@
       saveTrainings();
     } else {
       const f = parseNum(inp.value);
-      if (!(f > 0)) { toast('Ungültiger Sportfaktor.', true); inp.value = fmtFactor(s.factor); return; } // muss > 0 sein
+      if (!(f >= 0)) { toast('Ungültiger Sportfaktor.', true); inp.value = fmtFactor(s.factor); return; } // muss >= 0 sein (0 = Ruhe-Eintrag)
       s.factor = f;
       inp.value = fmtFactor(f);                                              // schön formatiert zurückschreiben
     }
@@ -1100,7 +1130,7 @@
     const name = $('n-name').value.trim();
     const f = parseNum($('n-factor').value);
     if (!name) return toast('Bitte einen Namen eingeben.', true);
-    if (!(f > 0)) return toast('Bitte einen gültigen Sportfaktor eingeben.', true);
+    if (!(f >= 0)) return toast('Bitte einen gültigen Sportfaktor eingeben.', true);
     if (sports.some(s => s.name.toLowerCase() === name.toLowerCase())) return toast('Diese Sportart existiert bereits.', true);
     sports.push({ name, factor: f });                                        // ans Ende der Liste
     saveSports();
@@ -1141,6 +1171,7 @@
         if (!Array.isArray(d.sports) || !Array.isArray(d.trainings)) throw new Error(); // Format prüfen
         if (!confirm('Vorhandene Daten werden durch den Import ersetzt. Fortfahren?')) return;
         sports = d.sports; trainings = d.trainings;                           // Daten übernehmen
+        recalcLoads();                                                        // Loads mit aktueller Formel (× 0,1)
         saveSports(); saveTrainings();
         renderSports(); refreshSportSelects(); renderKpis();
         toast('Import erfolgreich');
@@ -1163,8 +1194,19 @@
   /* ==========================================================================
      10. START (Initialisierung beim Laden der Seite)
      ========================================================================== */
+  // Einmalig: Ruhetag und Krank auch bei bestehenden Sportarten-Listen ergänzen
+  if (!load(KEY_MIG_REST, false)) {
+    REST_SPORTS.forEach(name => {
+      if (!sports.some(s => s.name.toLowerCase() === name.toLowerCase())) sports.push({ name, factor: 0 });
+    });
+    saveSports();
+    try { localStorage.setItem(KEY_MIG_REST, 'true'); } catch (e) {}
+  }
+  recalcLoads(); saveTrainings();   // gespeicherte Loads auf die aktuelle Formel (× 0,1) umrechnen
+
   $('a-date').value = todayISO();   // Datum standardmäßig auf heute setzen
   fillSportSelect($('a-sport'));    // Sportart-Dropdown befüllen
+  updateRestFields('a');            // Felder passend zur gewählten Sportart sperren/freigeben
   buildZoneLegend();                // Farbskala und Legende der Formzonen aufbauen
   renderSports();                   // Einstellungs-Tabelle zeichnen
   renderKpis();                     // Kennzahlen oben füllen
