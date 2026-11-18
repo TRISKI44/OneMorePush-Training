@@ -167,10 +167,17 @@
   .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
   .chart-box { position: relative; height: 320px; } /* Chart.js braucht einen Container mit fester Höhe */
   .chart-box.form-box { height: 200px; margin-top: 4px; } /* Form-Diagramm darunter, niedriger */
+  .chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; } /* waagerecht wischbar, wenn breiter als Bildschirm */
+  .swipe-hint { display: none; margin: 0 0 6px; font-size: .78rem; color: var(--muted); text-align: center; }
+  @media (max-width: 700px) {
+    .chart-inner { width: 900px; }   /* Handy: Diagramme 900px breit -> seitlich wischen */
+    .swipe-hint { display: block; }
+  }
   .chart-toolbar { align-items: center; gap: 8px 16px; }  /* Buttons und Kalender in einer Zeile */
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
   .date-range { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; } /* Von/Bis-Kalender */
-  .date-range label { font-size: .8rem; font-weight: 600; color: var(--muted); margin-left: 4px; }
+  .date-range span { display: flex; align-items: center; gap: 6px; white-space: nowrap; } /* Label + Feld bleiben zusammen */
+  .date-range label { font-size: .8rem; font-weight: 600; color: var(--muted); margin-left: 4px; min-width: 24px; }
   .date-range input { width: auto; padding: 5px 10px; border-radius: 999px; font-size: .85rem; } /* kompakt, Chip-Form */
 
   /* Statuskasten: TSB-Zahl links, Titel + Erklärung rechts. Farbe wird per JS gesetzt. */
@@ -355,13 +362,19 @@
         </div>
         <!-- Eigener Zeitraum per Kalender: Start- und Enddatum, in derselben Zeile wie die Buttons -->
         <div class="date-range">
-          <label for="c-from">Von</label><input type="date" id="c-from">
-          <label for="c-to">Bis</label><input type="date" id="c-to">
+          <span><label for="c-from">Von</label><input type="date" id="c-from"></span>
+          <span><label for="c-to">Bis</label><input type="date" id="c-to"></span>
         </div>
       </div>
       <!-- Zwei Zeichenflächen (canvas) für Chart.js: oben Fitness/Ermüdung, unten Form mit Zonen -->
-      <div class="chart-box"><canvas id="fitness-chart"></canvas></div>
-      <div class="chart-box form-box"><canvas id="form-chart"></canvas></div>
+      <!-- Auf dem Handy sind die Diagramme 900px breit und lassen sich seitlich wischen -->
+      <p class="swipe-hint">← Diagramm seitlich wischen →</p>
+      <div class="chart-scroll">
+        <div class="chart-inner">
+          <div class="chart-box"><canvas id="fitness-chart"></canvas></div>
+          <div class="chart-box form-box"><canvas id="form-chart"></canvas></div>
+        </div>
+      </div>
       <p class="hint" id="chart-msg"></p>
     </div>
 
@@ -1122,8 +1135,8 @@
     const grid = { color: '#edf1f7' };                          // feine, helle Gitterlinien (waagerecht)
     // Senkrechte Gitterlinien nur montags -> eine Linie pro Woche
     const xGrid = { color: c => (c.index !== undefined && days[c.index] && weekday(days[c.index].date) === 'Mo') ? '#e3e9f2' : 'transparent' };
-    // Datumsbeschriftung: auf schmalen Bildschirmen (Handy) weniger Beschriftungen
-    const xTicks = { maxTicksLimit: window.innerWidth < 600 ? 4 : 12, maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90',
+    // Datumsbeschriftung: bei schmalem Diagramm weniger Beschriftungen
+    const xTicks = { maxTicksLimit: $('form-chart').parentElement.clientWidth < 600 ? 4 : 12, maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90',
                      align: 'inner' }; // erstes/letztes Datum nach innen -> beide Diagramme gleich breit
     const tooltip = {
       callbacks: {
