@@ -167,12 +167,9 @@
   .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
   .chart-box { position: relative; height: 320px; } /* Chart.js braucht einen Container mit fester Höhe */
   .chart-box.form-box { height: 200px; margin-top: 4px; } /* Form-Diagramm darunter, niedriger */
-  .chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; } /* waagerecht wischbar, wenn breiter als Bildschirm */
+  .chart-box canvas { touch-action: pan-y; } /* senkrecht scrollt die Seite, waagerecht wischt das Diagramm (eigene Logik) */
   .swipe-hint { display: none; margin: 0 0 6px; font-size: .78rem; color: var(--muted); text-align: center; }
-  @media (max-width: 700px) {
-    .chart-inner { width: 900px; }   /* Handy: Diagramme 900px breit -> seitlich wischen */
-    .swipe-hint { display: block; }
-  }
+  .swipe-hint.show { display: block; } /* Breite und Hinweis setzt renderChart() per JavaScript (Handy: 2 Wochen pro Bildschirm) */
   .chart-toolbar { align-items: center; gap: 8px 16px; }  /* Buttons und Kalender in einer Zeile */
   .chips { display: flex; gap: 8px; flex-wrap: wrap; }
   .date-range { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; } /* Von/Bis-Kalender */
@@ -1111,7 +1108,7 @@
       msg.textContent = 'Noch keine Daten – erfasse zuerst ein Training.';
       return;
     }
-    msg.textContent = 'Oben: CTL = Fitness (42 Tage) und ATL = Ermüdung (7 Tage). Unten: TSB = Form (CTL − ATL) mit den Formzonen. Maus über das Diagramm: Werte und Trainings des Tages.';
+    msg.textContent = 'Oben: CTL = Fitness (42 Tage) und ATL = Ermüdung (7 Tage). Unten: TSB = Form (CTL − ATL) mit den Formzonen. Maus darüber bzw. antippen: Werte und Trainings des Tages; außerhalb tippen blendet sie aus.';
     if (chartRange === 'custom') {
       // Eigener Zeitraum: nur Tage zwischen Von und Bis (leeres Feld = keine Grenze).
       // Die Werte selbst sind aus der ganzen Historie berechnet, nur die Anzeige ist begrenzt.
@@ -1125,6 +1122,14 @@
       $('c-to').value = days[days.length - 1].date;
     }
 
+    // Handy (schmaler Bildschirm): nur die letzten 14 Tage zeigen. Wischen verschiebt dieses 14-Tage-Fenster
+    // (siehe Abschnitt "Wischen" unten). Die Y-Achse bleibt dabei stehen.
+    const MOBILE = window.innerWidth <= 700;
+    const WIN = MOBILE ? Math.min(14, days.length) : days.length; // Anzahl sichtbarer Tage
+    chartView = { min: days.length - WIN, len: WIN, total: days.length };
+    document.querySelector('.swipe-hint').classList.toggle('show', WIN < days.length);
+    const chartW = document.querySelector('.chart-scroll').clientWidth;
+
     // Trainings je Tag für die Infobox (Tooltip)
     const byDate = {};
     trainings.forEach(t => (byDate[t.date] = byDate[t.date] || []).push(t));
@@ -1134,9 +1139,10 @@
     const AXIS_W = 52;                                          // feste Breite der Y-Achse -> beide Diagramme exakt untereinander
     const grid = { color: '#edf1f7' };                          // feine, helle Gitterlinien (waagerecht)
     // Senkrechte Gitterlinien nur montags -> eine Linie pro Woche
-    const xGrid = { color: c => (c.index !== undefined && days[c.index] && weekday(days[c.index].date) === 'Mo') ? '#e3e9f2' : 'transparent' };
+    // c.tick.value = Tag-Index (auch wenn nur ein Ausschnitt sichtbar ist)
+    const xGrid = { color: c => { const i = c.tick ? c.tick.value : c.index; return (days[i] && weekday(days[i].date) === 'Mo') ? '#e3e9f2' : 'transparent'; } };
     // Datumsbeschriftung: bei schmalem Diagramm weniger Beschriftungen
-    const xTicks = { maxTicksLimit: $('form-chart').parentElement.clientWidth < 600 ? 4 : 12, maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90',
+    const xTicks = { maxTicksLimit: Math.max(3, Math.min(12, Math.floor(chartW / 95))), maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90',
                      align: 'inner' }; // erstes/letztes Datum nach innen -> beide Diagramme gleich breit
     const tooltip = {
       callbacks: {
@@ -1178,7 +1184,7 @@
         ...base,
         plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip },
         scales: {
-          x: { grid: xGrid, ticks: { display: false } },               // Datum nur unten im Form-Diagramm beschriften
+          x: { grid: xGrid, ticks: { display: false }, min: chartView.min, max: chartView.min + chartView.len - 1 },               // Datum nur unten im Form-Diagramm beschriften
           y: { beginAtZero: true, grid, ticks: { maxTicksLimit: 10, color: '#6b7a90' },
                title: { display: true, text: 'Trainingsbelastung' }, afterFit: s => { s.width = AXIS_W; } }
         }
@@ -1200,7 +1206,7 @@
         ...base,
         plugins: { legend: { display: false }, tooltip },
         scales: {
-          x: { grid: xGrid, ticks: xTicks },
+          x: { grid: xGrid, ticks: xTicks, min: chartView.min, max: chartView.min + chartView.len - 1 },
           // Achse mindestens von -35 bis +25, damit alle Zonen sichtbar sind; beschriftet werden die Zonengrenzen
           y: { suggestedMin: -35, suggestedMax: 25, grid: { color: '#dfe5ee' }, ticks: { color: '#6b7a90' },
                title: { display: true, text: 'Form' },
@@ -1211,6 +1217,56 @@
       plugins: [zoneBands, crosshair]                           // Zonen nur hier
     }));
   }
+
+  /* ---------- Wischen (Handy): sichtbares 14-Tage-Fenster verschieben ---------- */
+  let chartView = null;   // { min: erster sichtbarer Tag (Index), len: Anzahl sichtbarer Tage, total: Anzahl aller Tage }
+  let pan = null;         // laufende Wischbewegung: Startposition und Start-Fenster
+
+  // Fenster auf "min" setzen (begrenzt auf den gültigen Bereich) und beide Diagramme ohne Animation neu zeichnen
+  function setChartView(min) {
+    if (!chartView) return;
+    min = Math.max(0, Math.min(chartView.total - chartView.len, min));
+    if (min === chartView.min) return;
+    chartView.min = min;
+    charts.forEach(c => { c.options.scales.x.min = min; c.options.scales.x.max = min + chartView.len - 1; c.update('none'); });
+  }
+  ['fitness-chart', 'form-chart'].forEach(id => {
+    const cv = $(id);
+    cv.addEventListener('pointerdown', e => {
+      if (!chartView || chartView.len >= chartView.total) return;  // alles sichtbar -> nichts zu wischen
+      pan = { x: e.clientX, min: chartView.min, moved: false };
+    });
+    cv.addEventListener('pointermove', e => {
+      if (!pan) return;
+      const dx = e.clientX - pan.x;
+      if (!pan.moved && Math.abs(dx) < 8) return;                // kleine Bewegung = Antippen, kein Wischen
+      if (!pan.moved) { pan.moved = true; hideChartInfo(); }     // beim Wischen Infobox ausblenden
+      const area = charts[0].chartArea;
+      const perDay = (area.right - area.left) / Math.max(1, chartView.len - 1); // Pixel pro Tag
+      setChartView(pan.min - Math.round(dx / perDay));           // nach rechts wischen = ältere Tage
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => cv.addEventListener(t, () => { pan = null; }));
+  });
+
+  // Infobox (Tooltip) und senkrechte Linie ausblenden
+  function hideChartInfo() {
+    if (!charts.length) return;
+    hoverIndex = null;
+    charts.forEach(c => { c.setActiveElements([]); c.tooltip.setActiveElements([], { x: 0, y: 0 }); c.update('none'); });
+  }
+  // Tippen/Klicken außerhalb der Diagramme blendet die Infobox aus
+  document.addEventListener('pointerdown', e => {
+    if (!e.target.closest('#fitness-chart, #form-chart')) hideChartInfo();
+  });
+
+  // Handy gedreht oder Fenstergröße geändert -> Diagramme mit passender Breite neu zeichnen
+  let lastW = window.innerWidth, resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === lastW) return;                    // nur echte Breitenänderung (nicht Adressleiste ein/aus)
+    lastW = window.innerWidth;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if ($('tab-chart').classList.contains('active')) renderChart(); }, 200);
+  });
 
   /* ==========================================================================
      9. TAB 4 – EINSTELLUNGEN
