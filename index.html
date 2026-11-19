@@ -729,6 +729,7 @@
         Jedes echte Training eines Tages "erledigt" höchstens EINE geplante Einheit dieses Tages
         (2 Pläne + 1 echtes Training -> nur 1 Plan erledigt). Zuerst werden Pläne mit gleicher
         Sportart zugeordnet, danach die übrigen in der Reihenfolge, in der sie angelegt wurden.
+        Einträge "Ruhetag"/"Krank" (Sportfaktor 0) erledigen keinen geplanten Trainingsplan.
         'erledigt'       = ein echtes Training dieses Tages wurde dem Plan zugeordnet
         'nicht erledigt' = der Tag ist vorbei und für diesen Plan blieb kein echtes Training übrig
         'geplant'        = heute oder in der Zukunft, noch offen (heute ist noch nicht abgeschlossen)
@@ -756,7 +757,8 @@
       const unused = (realByDate[date] || []).slice();         // noch nicht zugeordnete echte Trainings
       const take = pick => { const i = unused.findIndex(pick); if (i < 0) return false; unused.splice(i, 1); return true; };
       plans.forEach(p => { if (take(r => r.sport === p.sport)) statuses[p.id] = 'erledigt'; }); // 1. gleiche Sportart
-      plans.forEach(p => { if (!statuses[p.id] && take(() => true)) statuses[p.id] = 'erledigt'; }); // 2. beliebiges Training
+      // 2. beliebiges ECHTES Training – Ruhetag/Krank (Sportfaktor 0) erledigt keinen Plan einer anderen Sportart
+      plans.forEach(p => { if (!statuses[p.id] && take(r => r.factor !== 0)) statuses[p.id] = 'erledigt'; });
       plans.forEach(p => { if (!statuses[p.id]) statuses[p.id] = date < today ? 'nicht erledigt' : 'geplant'; }); // 3. Rest
     });
     return statuses;
