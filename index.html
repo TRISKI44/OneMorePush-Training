@@ -181,7 +181,7 @@
   /* Historie: ATL/CTL/TSB in denselben Farben wie die Linien im Fitness Chart */
   td.v-ctl { color: #2f6fed; font-weight: 600; } /* Fitness (CTL): blau */
   td.v-atl { color: #f58a1f; font-weight: 600; } /* Ermüdung (ATL): orange */
-  td.v-tsb { color: #22a35a; font-weight: 600; } /* Form (TSB): grün */
+  td.v-tsb { font-weight: 600; } /* Form (TSB): Farbe der jeweiligen Formzone (wird per JavaScript aus ZONES gesetzt) */
   .pos { color: var(--teal); font-weight: 600; }   /* positiver TSB */
   .neg { color: var(--orange); font-weight: 600; } /* negativer TSB */
   .badge { display: inline-block; background: var(--blue-soft); color: var(--blue-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 600; }
@@ -1051,7 +1051,7 @@
         <td class="num"><strong>${fmt(t.load, 1)}</strong></td>
         <td class="num v-atl">${r ? fmt(r.atl) : dash}</td>
         <td class="num v-ctl">${r ? fmt(r.ctl) : dash}</td>
-        <td class="num v-tsb">${r ? fmt(r.tsb) : dash}</td>
+        <td class="num v-tsb"${r ? ` style="color:${ZONES.find(z => r.tsb < z.max).color}" title="${ZONES.find(z => r.tsb < z.max).title}"` : ''}>${r ? fmt(r.tsb) : dash}</td>
         <td class="num">
           <button class="btn btn-ghost btn-sm" data-edit="${t.id}">Bearbeiten</button>
           <button class="btn btn-danger btn-sm" data-del="${t.id}">Löschen</button>
