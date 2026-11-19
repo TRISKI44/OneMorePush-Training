@@ -159,6 +159,25 @@
   .planned-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #d9dde4; color: #5b6575; font-size: .72rem; font-weight: 600; }
   .planned-tag.done { background: #d6f0e0; color: #1d7a45; }   /* Plan erledigt (echtes Training am selben Tag) */
   .planned-tag.missed { background: #f7dcdc; color: #a83232; } /* Plan nicht erledigt (Tag vorbei, kein Training) */
+  /* Planen-Tab: Wochenansicht mit einzelnen Tagen */
+  .week-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .week-title { text-align: center; }
+  .week-title strong { font-size: 1.1rem; }
+  .week-title span { display: block; color: var(--muted); font-size: .85rem; }
+  .week-sum { display: flex; flex-wrap: wrap; gap: 6px 20px; background: var(--blue-soft); border-radius: 12px; padding: 10px 14px; margin: 14px 0 6px; font-size: .9rem; }
+  .week-sum b { font-weight: 700; }
+  .plan-day { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: flex-start; }
+  .plan-day:last-child { border-bottom: 0; }
+  .plan-day.past .pd-date { color: var(--muted); }                 /* vergangene Tage dezent */
+  .plan-day.today .pd-date { color: var(--blue-dark); }            /* heute hervorheben */
+  .pd-date { width: 78px; flex: none; font-weight: 700; padding-top: 6px; }
+  .pd-date small { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); }
+  .pd-units { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .pd-unit { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; background: #eef0f3; border-radius: 10px; padding: 8px 10px; } /* geplante Einheit: grau hinterlegt */
+  .pd-unit .meta { color: var(--muted); font-size: .85rem; }
+  .pd-unit .acts { margin-left: auto; display: flex; gap: 6px; }
+  .pd-add { align-self: flex-start; }
+  .pd-none { color: var(--muted); padding-top: 6px; }
   .pos { color: var(--teal); font-weight: 600; }   /* positiver TSB */
   .neg { color: var(--orange); font-weight: 600; } /* negativer TSB */
   .badge { display: inline-block; background: var(--blue-soft); color: var(--blue-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 600; }
@@ -255,9 +274,10 @@
   <div class="header-inner">
     <div class="brand"><span class="dot"></span> Fitness Tracker</div>
     <nav id="tabs">
-      <button data-tab="erfassen" class="active">Training erfassen</button>
-      <button data-tab="historie">Trainingshistorie</button>
-      <button data-tab="chart">Fitness Chart</button>
+      <button data-tab="erfassen" class="active">Erfassen</button>
+      <button data-tab="planen">Planen</button>
+      <button data-tab="historie">Historie</button>
+      <button data-tab="chart">Chart</button>
       <button data-tab="settings">Einstellungen</button>
     </nav>
   </div>
@@ -300,8 +320,28 @@
         </div>
         <div class="full actions"><button type="submit" class="btn btn-accent">Training speichern</button></div>
       </form>
-      <p class="hint">Load = Dauer × RPE × Sportfaktor × 0,1 · Ruhetag/Krank: Load 0, Dauer und RPE nicht nötig · ATL: 7-Tage-Zeitkonstante · CTL: 42-Tage-Zeitkonstante · TSB = CTL − ATL. Die Vorschau zeigt die Werte am Trainingstag inkl. dieses Trainings.</p>
+      <p class="hint">Load = Dauer × RPE × Sportfaktor × 0,1 · Ruhetag/Krank: Load 0, Dauer und RPE nicht nötig · ATL: 7-Tage-Zeitkonstante · CTL: 42-Tage-Zeitkonstante · TSB = CTL − ATL. Die Vorschau zeigt die Werte am Trainingstag inkl. dieses Trainings. Hier werden nur durchgeführte Trainings erfasst (Datum bis heute) – zukünftige Einheiten im Tab „Planen“.</p>
     </div>
+  </section>
+
+  <!-- ==========================================================================
+       TAB 1b: TRAINING PLANEN (Wochenansicht, Inhalt erzeugt renderPlan())
+       ========================================================================== -->
+  <section id="tab-planen" class="tab">
+    <div class="card">
+      <!-- Wochen-Navigation: vorige / nächste Woche -->
+      <div class="week-nav">
+        <button class="btn btn-ghost btn-sm" id="plan-prev" type="button" aria-label="Vorige Woche">◀</button>
+        <div class="week-title"><strong id="plan-kw">KW</strong><span id="plan-range"></span></div>
+        <button class="btn btn-ghost btn-sm" id="plan-next" type="button" aria-label="Nächste Woche">▶</button>
+      </div>
+      <!-- Wochensumme: geplanter Load, Einheiten, Stunden und Prognose für Sonntag -->
+      <div class="week-sum" id="plan-sum"></div>
+      <div style="text-align:center"><button class="btn btn-ghost btn-sm" id="plan-today" type="button" hidden>Zur aktuellen Woche</button></div>
+      <!-- Montag bis Sonntag -->
+      <div id="plan-days"></div>
+    </div>
+    <p class="hint">Geplante Einheiten zählen nie als echtes Training. Das tatsächliche Training wird ganz normal im Tab „Erfassen“ eingetragen; die geplante Einheit bekommt dann automatisch den Status „erledigt“ (bzw. „nicht erledigt“, wenn der Tag ohne Training vorbei ist). Die Prognose rechnet ab heute mit den offenen geplanten Einheiten und erscheint auch im Fitness Chart als Strich-Punkt-Linie.</p>
   </section>
 
   <!-- ==========================================================================
@@ -346,7 +386,7 @@
           <tbody id="hist-body"></tbody>
         </table>
       </div>
-      <p class="hint">ATL, CTL und TSB zeigen den Tageswert (Summe aller Trainings des Tages). Die CSV-Datei (Trennzeichen „;“, Dezimalkomma, UTF-8) öffnet sich in deutschem Excel per Doppelklick; alternativ über Daten → Aus Text/CSV.</p>
+      <p class="hint">Hier stehen nur tatsächlich durchgeführte Trainings; geplante Einheiten findest du im Tab „Planen“. ATL, CTL und TSB zeigen den Tageswert (Summe aller Trainings des Tages). Die CSV-Datei (Trennzeichen „;“, Dezimalkomma, UTF-8) öffnet sich in deutschem Excel per Doppelklick; alternativ über Daten → Aus Text/CSV.</p>
     </div>
   </section>
 
@@ -454,7 +494,7 @@
      ============================================================================ -->
 <dialog id="dlg-edit">
   <div class="dialog-inner">
-    <h2>Training bearbeiten</h2>
+    <h2 id="e-title">Training bearbeiten</h2>
     <form id="form-edit" class="grid" novalidate>
       <div class="field"><label for="e-date">Datum</label><input type="date" id="e-date" required></div>
       <div class="field"><label for="e-sport">Sportart</label><select id="e-sport" required></select></div>
@@ -653,7 +693,8 @@
         TSB       = CTL - ATL
     Rückgabe: { days: [Liste aller Tage], map: { 'JJJJ-MM-TT': Tageswerte } }
   */
-  function computeSeries(list) {
+  // until (optional, "JJJJ-MM-TT"): Reihe mindestens bis zu diesem Tag weiterrechnen (z. B. Prognose bis Sonntag einer Planwoche)
+  function computeSeries(list, until) {
     if (!list.length) return { days: [], map: {} };   // keine Trainings -> leere Reihe
 
     const loads = {};                  // Tagesnummer -> Summe der Loads dieses Tages
@@ -665,6 +706,7 @@
       if (n > max) max = n;
     });
     max = Math.max(max, toDayNum(todayISO()));       // Reihe mindestens bis heute laufen lassen
+    if (until) max = Math.max(max, toDayNum(until)); // ggf. bis zum gewünschten Tag verlängern
 
     const days = [], map = {};
     let atl = 0, ctl = 0;                            // Startwerte: 0
@@ -710,13 +752,14 @@
     - proj: echte Trainings + offene geplante Einheiten (Verlauf in die Zukunft)
     - days/map: für die Anzeige zusammengesetzt -> bis einschließlich heute echte Werte, danach Prognose
   */
-  function computeAll() {
+  // until (optional): Prognose mindestens bis zu diesem Tag verlängern (Planen-Tab: Sonntag der angezeigten Woche)
+  function computeAll(until) {
     const today = todayISO();
     const realList = realTrainings();
     const realDates = new Set(realList.map(t => t.date));
     const open = trainings.filter(t => t.planned && planStatus(t, realDates) === 'geplant');
     const real = computeSeries(realList);
-    const proj = open.length ? computeSeries(realList.concat(open)) : real;
+    const proj = (open.length || until) ? computeSeries(realList.concat(open), until) : real;
     const zero = date => ({ date, load: 0, atl: 0, ctl: 0, tsb: 0 });
     const days = proj.days.map(d => d.date <= today ? (real.map[d.date] || zero(d.date)) : d);
     const map = {};
@@ -737,8 +780,9 @@
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + btn.dataset.tab));
       // Inhalte beim Wechsel aktualisieren
       if (btn.dataset.tab === 'historie') renderHistory();
+      if (btn.dataset.tab === 'planen') renderPlan();
       if (btn.dataset.tab === 'chart') renderChart(); // Chart erst zeichnen, wenn sichtbar (sonst falsche Größe)
-      if (btn.dataset.tab === 'erfassen') { renderKpis(); updatePreview(); }
+      if (btn.dataset.tab === 'erfassen') { $('a-date').max = todayISO(); renderKpis(); updatePreview(); }
     });
   });
 
@@ -807,12 +851,11 @@
       return;
     }
     const load = calcLoad(v.dur, v.rpe, sportFactor(v.sport));        // Load des neuen Trainings
-    // Basis: echte Trainings; bei einem Datum in der Zukunft zusätzlich die offenen geplanten Einheiten
-    const all = computeAll();
-    const base = v.date > todayISO()
-      ? realTrainings().concat(trainings.filter(t => t.planned && planStatus(t, all.realDates) === 'geplant'))
-      : realTrainings();
-    const hypo = base.concat([{ date: v.date, load }]);               // bestehende Trainings + "Gedanken-Training"
+    if (v.date > todayISO()) {                                        // Zukunft wird hier nicht erfasst (-> Tab "Training planen")
+      ['pv-load', 'pv-ctl', 'pv-atl', 'pv-tsb'].forEach(i => $(i).textContent = '–');
+      return;
+    }
+    const hypo = realTrainings().concat([{ date: v.date, load }]);    // echte Trainings + "Gedanken-Training"
     const row = computeSeries(hypo).map[v.date];                      // Werte an diesem Tag nachschlagen
     $('pv-load').textContent = fmt(load, 1);
     $('pv-ctl').textContent = fmt(row.ctl);
@@ -834,15 +877,15 @@
     const v = readForm('a');
     const err = validate(v);
     if (err) return toast(err, true);            // Fehler anzeigen und abbrechen
+    if (v.date > todayISO()) return toast('Zukünftige Einheiten bitte im Tab „Planen“ anlegen.', true);
     const factor = sportFactor(v.sport);         // Faktor JETZT festhalten (spätere Änderungen betreffen dieses Training nicht)
     trainings.push({
       id: uid(), date: v.date, sport: v.sport, duration: v.dur, distance: v.dist,
-      rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc,
-      ...(v.date > todayISO() ? { planned: true } : {})   // Datum in der Zukunft -> geplante Einheit
+      rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc
     });
     saveTrainings();                             // in LocalStorage sichern
     $('a-dur').value = ''; $('a-dist').value = ''; $('a-rpe').value = ''; $('a-desc').value = ''; // Felder leeren (Datum/Sportart bleiben)
-    toast(v.date > todayISO() ? 'Geplante Einheit gespeichert' : v.rest ? v.sport + ' gespeichert' : 'Training gespeichert');
+    toast(v.rest ? v.sport + ' gespeichert' : 'Training gespeichert');
     renderKpis(); updatePreview();
   });
 
@@ -876,16 +919,16 @@
     return Math.floor(tot / 60) + ':' + String(tot % 60).padStart(2, '0') + ' h';
   }
 
-  // Fasst alle Trainings pro Woche (Montag–Sonntag) zusammen. Neueste Woche zuerst.
-  function computeWeeks() {
+  // Tagesnummer -> Tagesnummer des Montags derselben Woche.
+  // Tagesnummer 0 (1.1.1970) war ein Donnerstag -> (n+3) % 7 ergibt 0 für Montag, 6 für Sonntag.
+  // Das zusätzliche "+7 ... %7" fängt negative Werte bei Daten vor 1970 ab.
+  const mondayOf = n => n - ((((n + 3) % 7) + 7) % 7);
+
+  // Summiert eine Liste von Trainings pro Woche (Montag–Sonntag). Neueste Woche zuerst.
+  function sumWeeks(list) {
     const weeks = {};
-    const { realDates } = computeAll();
-    // Echte Trainings + offene geplante Einheiten (erledigte/nicht erledigte Pläne würden sonst doppelt zählen)
-    trainings.filter(t => !t.planned || planStatus(t, realDates) === 'geplant').forEach(t => {
-      const n = toDayNum(t.date);
-      // Tagesnummer 0 (1.1.1970) war ein Donnerstag -> (n+3) % 7 ergibt 0 für Montag, 6 für Sonntag.
-      // Das zusätzliche "+7 ... %7" fängt negative Werte bei Daten vor 1970 ab.
-      const start = n - ((((n + 3) % 7) + 7) % 7);                   // Tagesnummer des Montags dieser Woche
+    list.forEach(t => {
+      const start = mondayOf(toDayNum(t.date));                      // Tagesnummer des Montags dieser Woche
       const w = weeks[start] || (weeks[start] = { start, count: 0, minutes: 0, km: 0, load: 0 });
       if (t.factor !== 0) w.count++;                                 // Anzahl Trainings (Ruhetag/Krank zählt nicht)
       w.minutes += t.duration;                                       // Minuten summieren
@@ -894,6 +937,8 @@
     });
     return Object.values(weeks).sort((a, b) => b.start - a.start);   // absteigend sortieren
   }
+  // Wochenübersicht der Historie: nur tatsächlich durchgeführte Trainings
+  const computeWeeks = () => sumWeeks(realTrainings());
 
   // Zeichnet die Tabelle der Wochenübersicht
   function renderWeeks() {
@@ -932,19 +977,17 @@
   const csvNum = (n, d) => (d === undefined ? String(n) : Number(n).toFixed(d)).replace('.', ',');
 
   $('btn-csv').addEventListener('click', () => {
-    if (!trainings.length) return toast('Keine Trainings zum Exportieren.', true);
-    const { map, proj, realDates } = computeAll();
-    const rows = [['Datum', 'Sportart', 'Beschreibung', 'Dauer (min)', 'Distanz (km)', 'RPE', 'Sportfaktor', 'Load', 'ATL', 'CTL', 'TSB', 'Status']]; // Kopfzeile
-    trainings.slice()                                                          // Kopie, damit das Original unsortiert bleibt
-      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) // älteste zuerst
+    // Wie die Historie: nur tatsächlich durchgeführte Trainings (geplante Einheiten stecken im JSON-Backup)
+    const list = realTrainings();
+    if (!list.length) return toast('Keine Trainings zum Exportieren.', true);
+    const { map } = computeAll();
+    const rows = [['Datum', 'Sportart', 'Beschreibung', 'Dauer (min)', 'Distanz (km)', 'RPE', 'Sportfaktor', 'Load', 'ATL', 'CTL', 'TSB']]; // Kopfzeile
+    list.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)) // älteste zuerst (list ist bereits eine Kopie)
       .forEach(t => {
-        const status = t.planned ? planStatus(t, realDates) : 'durchgeführt';
-        // Echte Trainings: Tageswerte; offene Pläne: Prognose; erledigte/nicht erledigte Pläne: keine Werte
-        const r = !t.planned ? map[t.date] : status === 'geplant' ? proj.map[t.date] : null;
+        const r = map[t.date];                                                  // Tageswerte ATL/CTL/TSB
         rows.push([
           fmtDate(t.date), csvText(t.sport), csvText(t.desc || ''), csvNum(t.duration), csvNum(t.distance || 0),
-          csvNum(t.rpe), csvNum(t.factor), csvNum(t.load, 1),
-          r ? csvNum(r.atl, 1) : '', r ? csvNum(r.ctl, 1) : '', r ? csvNum(r.tsb, 1) : '', status
+          csvNum(t.rpe), csvNum(t.factor), csvNum(t.load, 1), csvNum(r.atl, 1), csvNum(r.ctl, 1), csvNum(r.tsb, 1)
         ]);
       });
     const csv = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');            // BOM + Zeilen mit ";" verbinden
@@ -957,26 +1000,24 @@
 
   /* ---------- 7c. Trainingsliste ---------- */
 
-  // Zeichnet die Wochenübersicht und die Tabelle aller Trainings (neueste zuerst)
+  // Zeichnet die Wochenübersicht und die Tabelle aller durchgeführten Trainings (neueste zuerst).
+  // Geplante Einheiten erscheinen hier nicht – die zeigt der Tab "Training planen".
   function renderHistory() {
     renderWeeks();
-    const { map, proj, realDates } = computeAll();     // Tageswerte für ATL/CTL/TSB (echt bzw. Prognose)
+    const { map } = computeAll();                       // Tageswerte für ATL/CTL/TSB
     const body = $('hist-body');
-    if (!trainings.length) {
+    const list = realTrainings();
+    if (!list.length) {
       body.innerHTML = '<tr><td colspan="11" class="empty">Noch keine Trainings erfasst.</td></tr>';
       return;
     }
     // Sortierung: nach Datum absteigend, bei gleichem Datum nach ID
-    const sorted = trainings.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-    const STATUS_CLASS = { 'geplant': '', 'erledigt': ' done', 'nicht erledigt': ' missed' };
+    const sorted = list.sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
     const dash = '<span style="color:var(--muted)">–</span>';
     body.innerHTML = sorted.map(t => {
-      const planned = !!t.planned;
-      const status = planned ? planStatus(t, realDates) : null;
-      // Echte Trainings: Tageswerte; offene Pläne: Prognose; erledigte/nicht erledigte Pläne zählen nicht -> "–"
-      const r = !planned ? map[t.date] : status === 'geplant' ? proj.map[t.date] : null;
-      return `<tr${planned ? ' class="planned" title="Geplante Einheit"' : ''}>
-        <td>${fmtDateWd(t.date)}${planned ? `<span class="planned-tag${STATUS_CLASS[status]}">${status}</span>` : ''}</td>
+      const r = map[t.date];                            // Werte des Trainingstages
+      return `<tr>
+        <td>${fmtDateWd(t.date)}</td>
         <td><span class="badge">${esc(t.sport)}</span></td>
         <td>${t.desc ? esc(t.desc) : '<span style="color:var(--muted)">–</span>'}</td>
         <td class="num">${t.duration ? fmt(t.duration, 0) + ' min' : '–'}</td>
@@ -1010,11 +1051,15 @@
     }
   });
 
-  // Öffnet den Bearbeiten-Dialog und füllt ihn mit den Werten des Trainings
+  // Öffnet den Bearbeiten-Dialog und füllt ihn mit den Werten des Trainings (echtes Training oder geplante Einheit)
   function openEdit(id) {
     const t = trainings.find(x => x.id === id);
     if (!t) return;
     editId = id;                                        // merken, welches Training bearbeitet wird
+    $('e-title').textContent = t.planned ? 'Geplante Einheit bearbeiten' : 'Training bearbeiten';
+    // Kalender passend begrenzen: echte Trainings bis heute, geplante Einheiten ab heute
+    $('e-date').min = t.planned ? todayISO() : '';
+    $('e-date').max = t.planned ? '' : todayISO();
     fillSportSelect($('e-sport'), t.sport);
     $('e-date').value = t.date;
     $('e-dur').value = t.duration;
@@ -1026,22 +1071,132 @@
   }
   $('e-cancel').addEventListener('click', () => $('dlg-edit').close()); // Abbrechen schließt den Dialog
 
-  // Änderungen aus dem Dialog speichern
+  // Öffnet denselben Dialog leer, um eine NEUE geplante Einheit an einem Tag anzulegen (Planen-Tab)
+  function openNewPlan(date) {
+    editId = null; newPlanDate = date;                  // kein bestehendes Training -> Neuanlage
+    $('e-title').textContent = 'Einheit planen';
+    $('e-date').min = todayISO(); $('e-date').max = '';
+    fillSportSelect($('e-sport'), sports.length ? sports[0].name : null);
+    $('e-date').value = date;
+    $('e-dur').value = ''; $('e-dist').value = ''; $('e-rpe').value = ''; $('e-desc').value = '';
+    updateRestFields('e');
+    $('dlg-edit').showModal();
+  }
+
+  // Änderungen aus dem Dialog speichern (Bearbeiten oder neue geplante Einheit)
   $('form-edit').addEventListener('submit', e => {
     e.preventDefault();
     const v = readForm('e');
     const err = validate(v);
     if (err) return toast(err, true);
-    const t = trainings.find(x => x.id === editId);
+    const today = todayISO();
+
+    if (!editId) {                                      // --- Neue geplante Einheit ---
+      if (v.date < today) return toast('Geplante Einheiten nur ab heute. Vergangene Trainings bitte erfassen.', true);
+      const factor = sportFactor(v.sport);
+      trainings.push({
+        id: uid(), date: v.date, sport: v.sport, duration: v.dur, distance: v.dist,
+        rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc, planned: true
+      });
+      saveTrainings();
+      $('dlg-edit').close();
+      planWeek = mondayOf(toDayNum(v.date));            // zur Woche der neuen Einheit springen
+      renderPlan(); renderKpis();
+      return toast('Einheit geplant');
+    }
+
+    const t = trainings.find(x => x.id === editId);     // --- Bestehendes Training / bestehender Plan ---
     if (!t) return;
+    if (!t.planned && v.date > today) return toast('Zukünftige Einheiten bitte im Tab „Planen“ anlegen.', true);
+    if (t.planned && v.date !== t.date && v.date < today) return toast('Geplante Einheiten nur auf heute oder später verschieben.', true);
     // Gleiche Sportart -> alter Faktor bleibt; andere Sportart -> aktueller Faktor dieser Sportart
     const factor = (v.sport === t.sport) ? t.factor : sportFactor(v.sport);
     Object.assign(t, { date: v.date, sport: v.sport, duration: v.dur, distance: v.dist, rpe: v.rpe, factor, load: calcLoad(v.dur, v.rpe, factor), desc: v.desc });
-    if (v.date > todayISO()) t.planned = true;          // in die Zukunft verschoben -> geplante Einheit (geplant bleibt geplant)
     saveTrainings();
     $('dlg-edit').close();
-    renderHistory(); renderKpis();
+    if (t.planned) { planWeek = mondayOf(toDayNum(t.date)); renderPlan(); } else renderHistory();
+    renderKpis();
     toast('Änderungen gespeichert');
+  });
+
+  /* ==========================================================================
+     7d. TAB "TRAINING PLANEN" – Wochenansicht (Montag bis Sonntag)
+     ========================================================================== */
+  let planWeek = mondayOf(toDayNum(todayISO()));        // Tagesnummer des Montags der angezeigten Woche
+  let newPlanDate = null;                               // Datum für eine neue geplante Einheit (Dialog)
+  const STATUS_CLASS = { 'geplant': '', 'erledigt': ' done', 'nicht erledigt': ' missed' };
+
+  function renderPlan() {
+    const start = planWeek, sunday = fromDayNum(start + 6);
+    const today = todayISO();
+    const all = computeAll(sunday);                     // Prognose mindestens bis Sonntag dieser Woche
+    const iso = isoWeek(start);
+    $('plan-kw').textContent = 'KW ' + iso.kw + (iso.year !== new Date().getFullYear() ? ' / ' + iso.year : '');
+    $('plan-range').textContent = fmtDate(fromDayNum(start)).slice(0, 6) + ' – ' + fmtDate(sunday);
+    $('plan-today').hidden = start === mondayOf(toDayNum(today)); // Button nur, wenn nicht die aktuelle Woche
+
+    // Geplante Einheiten dieser Woche
+    const plans = trainings.filter(t => t.planned && toDayNum(t.date) >= start && toDayNum(t.date) <= start + 6);
+    const w = sumWeeks(plans)[0] || { count: 0, minutes: 0, load: 0 };
+
+    // Werte am Sonntag: Zukunft = Prognose (mit offenen Plänen), Vergangenheit/heute = tatsächlicher Stand
+    const r = all.map[sunday];
+    let sumHtml = `<span>Geplanter Load: <b>${fmt(w.load, 0)}</b></span>
+                   <span>Einheiten: <b>${w.count}</b> · <b>${fmtHours(w.minutes)}</b></span>`;
+    if (r) {
+      const zone = ZONES.find(z => r.tsb < z.max);
+      const label = sunday > today ? 'Prognose Sonntag' : 'Stand Sonntag';
+      sumHtml += `<span>${label}: CTL <b>${fmt(r.ctl)}</b> · ATL <b>${fmt(r.atl)}</b> · TSB <b style="color:${zone.color}">${fmt(r.tsb)}</b>
+                  <span style="color:${zone.color};font-weight:600">(${zone.short})</span></span>`;
+    }
+    $('plan-sum').innerHTML = sumHtml;
+
+    // Montag bis Sonntag
+    $('plan-days').innerHTML = [0, 1, 2, 3, 4, 5, 6].map(i => {
+      const date = fromDayNum(start + i);
+      const cls = date < today ? ' past' : date === today ? ' today' : '';
+      const units = plans.filter(t => t.date === date).map(t => {
+        const status = planStatus(t, all.realDates);
+        const tag = status === 'geplant' ? '' : `<span class="planned-tag${STATUS_CLASS[status]}">${status}</span>`;
+        const meta = t.factor === 0 ? '' : `${fmt(t.duration, 0)} min${t.distance ? ' · ' + fmt(t.distance, 1) + ' km' : ''} · RPE ${fmt(t.rpe, 0)} · Load ${fmt(t.load, 0)}`;
+        return `<div class="pd-unit">
+          <span class="badge">${esc(t.sport)}</span>
+          <span class="meta">${meta}${t.desc ? (meta ? ' · ' : '') + esc(t.desc) : ''}</span>${tag}
+          <span class="acts">
+            <button class="btn btn-ghost btn-sm" data-pedit="${t.id}" title="Bearbeiten">✎</button>
+            <button class="btn btn-danger btn-sm" data-pdel="${t.id}" title="Löschen">🗑</button>
+          </span>
+        </div>`;
+      }).join('');
+      const add = date >= today ? `<button class="btn btn-ghost btn-sm pd-add" data-padd="${date}">+ Einheit planen</button>` : '';
+      const none = !units && !add ? '<span class="pd-none">–</span>' : '';
+      return `<div class="plan-day${cls}">
+        <div class="pd-date">${weekday(date)} ${fmtDate(date).slice(0, 6)}${date === today ? '<small>heute</small>' : ''}</div>
+        <div class="pd-units">${units}${add}${none}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Wochen-Navigation
+  $('plan-prev').addEventListener('click', () => { planWeek -= 7; renderPlan(); });
+  $('plan-next').addEventListener('click', () => { planWeek += 7; renderPlan(); });
+  $('plan-today').addEventListener('click', () => { planWeek = mondayOf(toDayNum(todayISO())); renderPlan(); });
+
+  // Klicks in der Wochenansicht: neue Einheit, bearbeiten, löschen (Event-Delegation)
+  $('plan-days').addEventListener('click', e => {
+    const add = e.target.closest('[data-padd]');
+    const edit = e.target.closest('[data-pedit]');
+    const del = e.target.closest('[data-pdel]');
+    if (add) openNewPlan(add.dataset.padd);
+    if (edit) openEdit(edit.dataset.pedit);
+    if (del) {
+      const t = trainings.find(x => x.id === del.dataset.pdel);
+      if (t && confirm(`Geplante Einheit am ${fmtDateWd(t.date)} (${t.sport}) wirklich löschen?`)) {
+        trainings = trainings.filter(x => x.id !== t.id);
+        saveTrainings(); renderPlan();
+        toast('Geplante Einheit gelöscht');
+      }
+    }
   });
 
   /* ==========================================================================
@@ -1504,6 +1659,7 @@
   markPlanned(); saveTrainings();   // bereits erfasste Trainings in der Zukunft als geplant markieren
 
   $('a-date').value = todayISO();   // Datum standardmäßig auf heute setzen
+  $('a-date').max = todayISO();     // Erfassen nur bis heute (Zukunft -> Tab "Training planen")
   fillSportSelect($('a-sport'));    // Sportart-Dropdown befüllen
   updateRestFields('a');            // Felder passend zur gewählten Sportart sperren/freigeben
   buildZoneLegend();                // Farbskala und Legende der Formzonen aufbauen
