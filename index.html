@@ -20,6 +20,15 @@
 <!-- Chart.js von einem CDN laden (wird für das Liniendiagramm benötigt) -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
+<!-- Farbschema (Hell/Dunkel) schon VOR dem Aufbau der Seite setzen, damit sie nicht kurz hell aufblitzt -->
+<script>
+  try {
+    var pref = localStorage.getItem('ft_theme_v1') || 'light';   // gespeicherte Wahl: light / dark / system
+    var dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (e) {}
+</script>
+
 <style>
   /* ==========================================================================
      CSS – 1. FARBEN & GRUNDWERTE
@@ -40,6 +49,59 @@
     --danger: #d64545;        /* Rot für Fehler/Löschen */
     --radius: 14px;           /* Rundung der Karten */
     --shadow: 0 2px 10px rgba(31, 42, 61, .06); /* weicher Schatten */
+    /* Weitere Flächen- und Diagrammfarben (werden im Dark Mode unten überschrieben) */
+    --header-bg: linear-gradient(120deg, #1d4fc4 0%, #2f6fed 55%, #5d95f5 100%); /* blauer Farbverlauf im Kopf */
+    --input-bg: #ffffff;      /* Eingabefelder, Chips */
+    --hover: #f8faff;         /* Tabellenzeile unter der Maus */
+    --plan-bg: #eef0f3;       /* geplante Einheiten: grau hinterlegt */
+    --plan-hover: #e6e9ee;
+    --tag-bg: #d9dde4;  --tag-text: #5b6575;    /* Status "geplant" */
+    --done-bg: #d6f0e0; --done-text: #1d7a45;   /* Status "erledigt" */
+    --missed-bg: #f7dcdc; --missed-text: #a83232; /* Status "nicht erledigt" */
+    --ghost-hover: #d6e5ff;   /* heller Button beim Überfahren */
+    --danger-bg: #fdeaea; --danger-hover: #fad3d3; /* Löschen-Button */
+    --fs-bg: #f6f8fc;         /* Kasten der Formeinschätzung */
+    --toast-bg: #1f2a3d;      /* kurze Meldungen unten */
+    --chart-grid: #edf1f7;    /* Diagramm: waagerechte Gitterlinien */
+    --chart-grid-strong: #e3e9f2; /* Diagramm: Wochenlinien und Gitter im Form-Diagramm */
+    --chart-grid-form: #dfe5ee; /* Diagramm: Gitter im Form-Diagramm */
+    --chart-tick: #6b7a90;    /* Diagramm: Achsenbeschriftung */
+    --chart-text: #666;       /* Diagramm: sonstiger Text, z. B. Legende (Chart.js-Standard) */
+    --crosshair: rgba(31, 42, 61, .55); /* Diagramm: senkrechte Linie unter der Maus */
+  }
+
+  /* DARK MODE: wird aktiv, wenn <html data-theme="dark"> gesetzt ist (Einstellung im Tab Einstellungen) */
+  :root[data-theme="dark"] {
+    --bg: #0f1521;
+    --card: #182131;
+    --text: #e4e9f2;
+    --muted: #93a1b8;
+    --line: #2a3548;
+    --blue: #4d86f5;
+    --blue-dark: #7aa5f8;     /* im Dunkeln heller, damit Texte auf dunklem Grund lesbar bleiben */
+    --blue-soft: #1d2c4a;
+    --teal: #2cc4b8;
+    --danger: #ef6b6b;
+    --shadow: 0 2px 12px rgba(0, 0, 0, .35);
+    --header-bg: linear-gradient(120deg, #10285e 0%, #1b46ad 60%, #2a62d6 100%);
+    --input-bg: #111a28;
+    --hover: #1e293b;
+    --plan-bg: #222c3c;
+    --plan-hover: #2a3547;
+    --tag-bg: #334055;  --tag-text: #b7c2d4;
+    --done-bg: #163a28; --done-text: #5fd394;
+    --missed-bg: #45202a; --missed-text: #ff8f8f;
+    --ghost-hover: #253a61;
+    --danger-bg: #3a1f25; --danger-hover: #4a252d;
+    --fs-bg: #141c2a;
+    --toast-bg: #2e3a50;
+    --chart-grid: #222d3e;
+    --chart-grid-strong: #2e3a4f;
+    --chart-grid-form: #2e3a4f;
+    --chart-tick: #93a1b8;
+    --chart-text: #93a1b8;
+    --crosshair: rgba(228, 233, 242, .5);
+    color-scheme: dark;       /* Kalender, Auswahllisten, Scrollbalken des Browsers dunkel */
   }
 
   /* ==========================================================================
@@ -58,7 +120,7 @@
      CSS – 3. KOPFBEREICH & TAB-NAVIGATION
      ========================================================================== */
   header {
-    background: linear-gradient(120deg, #1d4fc4 0%, #2f6fed 55%, #5d95f5 100%); /* blauer Farbverlauf */
+    background: var(--header-bg); /* blauer Farbverlauf (Variable, im Dark Mode dunkler) */
     color: #fff;
     padding: 18px 20px 0;         /* unten 0, weil die Tabs direkt anschließen */
   }
@@ -110,7 +172,7 @@
   .field { display: flex; flex-direction: column; gap: 5px; } /* Label über Eingabefeld */
   .field label { font-size: .8rem; font-weight: 600; color: var(--muted); }
   input, select {
-    font: inherit; color: var(--text); background: #fff; border: 1.5px solid var(--line);
+    font: inherit; color: var(--text); background: var(--input-bg); border: 1.5px solid var(--line);
     border-radius: 10px; padding: 10px 12px; width: 100%;
     transition: border-color .15s, box-shadow .15s;
   }
@@ -139,9 +201,9 @@
   .btn-accent { background: var(--orange); color: #fff; }
   .btn-accent:hover { background: #dd7710; }
   .btn-ghost { background: var(--blue-soft); color: var(--blue-dark); }
-  .btn-ghost:hover { background: #d6e5ff; }
-  .btn-danger { background: #fdeaea; color: var(--danger); }
-  .btn-danger:hover { background: #fad3d3; }
+  .btn-ghost:hover { background: var(--ghost-hover); }
+  .btn-danger { background: var(--danger-bg); color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-hover); }
   .btn-sm { padding: 6px 12px; font-size: .85rem; } /* kleine Variante (Tabellen) */
   .actions { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -153,12 +215,12 @@
   th, td { padding: 10px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
   td.num, th.num { text-align: right; } /* Zahlenspalten rechtsbündig */
-  tbody tr:hover { background: #f8faff; }
-  tbody tr.planned { background: #eef0f3; } /* geplante (zukünftige) Trainings: leicht grau hinterlegt */
-  tbody tr.planned:hover { background: #e6e9ee; }
-  .planned-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #d9dde4; color: #5b6575; font-size: .72rem; font-weight: 600; }
-  .planned-tag.done { background: #d6f0e0; color: #1d7a45; }   /* Plan erledigt (echtes Training am selben Tag) */
-  .planned-tag.missed { background: #f7dcdc; color: #a83232; } /* Plan nicht erledigt (Tag vorbei, kein Training) */
+  tbody tr:hover { background: var(--hover); }
+  tbody tr.planned { background: var(--plan-bg); } /* geplante (zukünftige) Trainings: leicht grau hinterlegt */
+  tbody tr.planned:hover { background: var(--plan-hover); }
+  .planned-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--tag-bg); color: var(--tag-text); font-size: .72rem; font-weight: 600; }
+  .planned-tag.done { background: var(--done-bg); color: var(--done-text); }   /* Plan erledigt (echtes Training am selben Tag) */
+  .planned-tag.missed { background: var(--missed-bg); color: var(--missed-text); } /* Plan nicht erledigt (Tag vorbei, kein Training) */
   /* Planen-Tab: Wochenansicht mit einzelnen Tagen */
   .week-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .week-title { text-align: center; }
@@ -173,7 +235,7 @@
   .pd-date { width: 78px; flex: none; font-weight: 700; padding-top: 6px; }
   .pd-date small { display: block; font-size: .72rem; font-weight: 600; color: var(--muted); }
   .pd-units { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .pd-unit { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; background: #eef0f3; border-radius: 10px; padding: 8px 10px; } /* geplante Einheit: grau hinterlegt */
+  .pd-unit { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; background: var(--plan-bg); border-radius: 10px; padding: 8px 10px; } /* geplante Einheit: grau hinterlegt */
   .pd-unit .meta { color: var(--muted); font-size: .85rem; }
   .pd-unit .acts { margin-left: auto; display: flex; gap: 6px; }
   .pd-add { align-self: flex-start; }
@@ -191,14 +253,14 @@
      CSS – 8. FITNESS CHART & FORMEINSCHÄTZUNG
      ========================================================================== */
   .chart-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; } /* Zeitraum-Auswahl */
-  .chip { border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: var(--muted); }
+  .chip { border: 1.5px solid var(--line); background: var(--input-bg); border-radius: 999px; padding: 6px 14px; font-size: .85rem; font-weight: 600; cursor: pointer; color: var(--muted); }
   .chip.active { background: var(--blue); border-color: var(--blue); color: #fff; }
   .chart-box { position: relative; height: 320px; } /* Chart.js braucht einen Container mit fester Höhe */
   .chart-box.form-box { height: 200px; margin-top: 4px; } /* Form-Diagramm darunter, niedriger */
   .chart-box canvas { touch-action: pan-y; } /* senkrecht scrollt die Seite, waagerecht wischt das Diagramm (eigene Logik) */
   .swipe-hint { display: none; margin: 0 0 6px; font-size: .78rem; color: var(--muted); text-align: center; }
   .swipe-hint.show { display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .swipe-btn { border: 1.5px solid var(--line); background: #fff; color: var(--blue-dark); border-radius: 999px;
+  .swipe-btn { border: 1.5px solid var(--line); background: var(--input-bg); color: var(--blue-dark); border-radius: 999px;
     width: 40px; height: 32px; font-size: 1.05rem; font-weight: 700; cursor: pointer; } /* große Tippfläche */
   .swipe-btn:disabled { color: var(--line); cursor: default; } /* Ende erreicht */ /* Breite und Hinweis setzt renderChart() per JavaScript (Handy: 2 Wochen pro Bildschirm) */
   .chart-toolbar { align-items: center; gap: 8px 16px; }  /* Buttons und Kalender in einer Zeile */
@@ -209,7 +271,7 @@
   .date-range input { width: auto; padding: 5px 10px; border-radius: 999px; font-size: .85rem; } /* kompakt, Chip-Form */
 
   /* Statuskasten: TSB-Zahl links, Titel + Erklärung rechts. Farbe wird per JS gesetzt. */
-  .fs-box { display: flex; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 12px; border-left: 6px solid var(--muted); background: #f6f8fc; margin-bottom: 22px; }
+  .fs-box { display: flex; gap: 18px; align-items: center; padding: 14px 16px; border-radius: 12px; border-left: 6px solid var(--muted); background: var(--fs-bg); margin-bottom: 22px; }
   .fs-tsb { text-align: center; min-width: 84px; }
   .fs-tsb span { display: block; font-size: .7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
   .fs-tsb strong { font-size: 1.9rem; }
@@ -239,6 +301,7 @@
   /* ==========================================================================
      CSS – 10. DIALOG (Training bearbeiten) & TOAST (kurze Meldungen)
      ========================================================================== */
+  :root[data-theme="dark"] dialog { background: var(--card); color: var(--text); } /* Dialog nur im Dark Mode umfärben (hell: Browser-Standard wie bisher) */
   dialog { border: 0; border-radius: var(--radius); padding: 0; width: min(560px, 94vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
   dialog::backdrop { background: rgba(20, 30, 50, .45); } /* abgedunkelter Hintergrund hinter dem Dialog */
   .dialog-inner { padding: 22px; }
@@ -246,7 +309,7 @@
 
   .toast {  /* Meldung unten mittig, standardmäßig unsichtbar */
     position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px);
-    background: #1f2a3d; color: #fff; padding: 11px 20px; border-radius: 10px; font-weight: 600;
+    background: var(--toast-bg); color: #fff; padding: 11px 20px; border-radius: 10px; font-weight: 600;
     opacity: 0; pointer-events: none; transition: all .25s; z-index: 50; max-width: 90vw;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); } /* sichtbar */
@@ -473,6 +536,20 @@
       <p class="hint">Änderungen werden automatisch gespeichert. Bereits erfasste Trainings behalten den Sportfaktor, der beim Speichern galt. Dezimalwerte mit Komma oder Punkt.</p>
     </div>
 
+    <!-- Darstellung: Hell / Dunkel / wie das Gerät -->
+    <div class="card">
+      <h2>Darstellung</h2>
+      <div class="field" style="max-width:320px">
+        <label for="theme-select">Farbschema</label>
+        <select id="theme-select">
+          <option value="light">Hell</option>
+          <option value="dark">Dunkel (Dark Mode)</option>
+          <option value="system">Wie Gerät (automatisch)</option>
+        </select>
+      </div>
+      <p class="hint">„Wie Gerät“ folgt der Hell/Dunkel-Einstellung von Handy bzw. PC. Die Auswahl wird pro Gerät gespeichert.</p>
+    </div>
+
     <!-- Datensicherung -->
     <div class="card">
       <h2>Daten</h2>
@@ -656,6 +733,9 @@
   const isRestSport = name => sportFactor(name) === 0;
 
   // Hex-Farbe (#rrggbb) + Transparenz -> "rgba(r,g,b,a)". Wird für die halbtransparenten Zonen im Chart gebraucht.
+  // Wert einer CSS-Variable lesen (z. B. cssVar('--chart-tick')). Liefert je nach Hell/Dunkel die passende Farbe.
+  const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
   const hexToRgba = (hex, alpha) => {
     const n = parseInt(hex.slice(1), 16);                                // "#22a35a" -> Zahl
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`; // Rot-, Grün-, Blauanteil herausschneiden
@@ -1332,7 +1412,7 @@
       const { ctx, chartArea } = chart;
       if (x < chartArea.left || x > chartArea.right) return;
       ctx.save();
-      ctx.strokeStyle = 'rgba(31,42,61,.55)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = cssVar('--crosshair'); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom); ctx.stroke();
       ctx.restore();
     },
@@ -1405,12 +1485,14 @@
     const DASH_DOT = [8, 4, 2, 4];                              // Strich 8, Lücke 4, Punkt 2, Lücke 4
     const future = { borderDash: c => days[c.p1DataIndex] && days[c.p1DataIndex].date > todayStr ? DASH_DOT : undefined };
     const AXIS_W = 52;                                          // feste Breite der Y-Achse -> beide Diagramme exakt untereinander
-    const grid = { color: '#edf1f7' };                          // feine, helle Gitterlinien (waagerecht)
+    const grid = { color: cssVar('--chart-grid') };             // feine Gitterlinien (waagerecht), Farbe passend zu Hell/Dunkel
+    const gridStrong = cssVar('--chart-grid-strong');           // etwas kräftigere Linien (Wochenlinien, Form-Diagramm)
+    Chart.defaults.color = cssVar('--chart-text');              // Standard-Textfarbe von Chart.js (z. B. Legende)
     // Senkrechte Gitterlinien nur montags -> eine Linie pro Woche
     // c.tick.value = Tag-Index (auch wenn nur ein Ausschnitt sichtbar ist)
-    const xGrid = { color: c => { const i = c.tick ? c.tick.value : c.index; return (days[i] && weekday(days[i].date) === 'Mo') ? '#e3e9f2' : 'transparent'; } };
+    const xGrid = { color: c => { const i = c.tick ? c.tick.value : c.index; return (days[i] && weekday(days[i].date) === 'Mo') ? gridStrong : 'transparent'; } };
     // Datumsbeschriftung: bei schmalem Diagramm weniger Beschriftungen
-    const xTicks = { maxTicksLimit: Math.max(3, Math.min(12, Math.floor(chartW / 95))), maxRotation: 0, autoSkipPadding: 20, color: '#6b7a90',
+    const xTicks = { maxTicksLimit: Math.max(3, Math.min(12, Math.floor(chartW / 95))), maxRotation: 0, autoSkipPadding: 20, color: cssVar('--chart-tick'),
                      align: 'inner' }; // erstes/letztes Datum nach innen -> beide Diagramme gleich breit
     const tooltip = {
       callbacks: {
@@ -1455,7 +1537,7 @@
         plugins: { legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }, tooltip },
         scales: {
           x: { grid: xGrid, ticks: { display: false }, min: chartView.min, max: chartView.min + chartView.len - 1 },               // Datum nur unten im Form-Diagramm beschriften
-          y: { beginAtZero: true, grid, ticks: { maxTicksLimit: 10, color: '#6b7a90' },
+          y: { beginAtZero: true, grid, ticks: { maxTicksLimit: 10, color: cssVar('--chart-tick') },
                title: { display: true, text: 'Trainingsbelastung' }, afterFit: s => { s.width = AXIS_W; } }
         }
       },
@@ -1478,7 +1560,7 @@
         scales: {
           x: { grid: xGrid, ticks: xTicks, min: chartView.min, max: chartView.min + chartView.len - 1 },
           // Achse mindestens von -42 bis +32, damit auch die äußeren Zonen (Überlastung, Zu frisch) breit genug für ihre Beschriftung sind
-          y: { suggestedMin: -42, suggestedMax: 32, grid: { color: '#dfe5ee' }, ticks: { color: '#6b7a90' },
+          y: { suggestedMin: -42, suggestedMax: 32, grid: { color: cssVar('--chart-grid-form') }, ticks: { color: cssVar('--chart-tick') },
                title: { display: true, text: 'Form' },
                afterBuildTicks: ax => { ax.ticks = bounds.filter(v => v >= ax.min && v <= ax.max).map(value => ({ value })); },
                afterFit: s => { s.width = AXIS_W; } }
@@ -1622,6 +1704,26 @@
     fillSportSelect($('a-sport'), cur && sports.some(s => s.name === cur) ? cur : null);
     updatePreview();
   }
+
+  /* ---------- Darstellung: Hell / Dunkel / wie Gerät ---------- */
+  const KEY_THEME = 'ft_theme_v1';
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  const themePref = () => { try { return localStorage.getItem(KEY_THEME) || 'light'; } catch (e) { return 'light'; } };
+
+  // Setzt data-theme am <html>-Element; das CSS schaltet damit alle Farben um. Diagramme werden neu gezeichnet.
+  function applyTheme() {
+    const pref = themePref();
+    const dark = pref === 'dark' || (pref === 'system' && systemDark.matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    if ($('tab-chart').classList.contains('active')) renderChart(); // Chart-Farben (Gitter, Achsen) neu einlesen
+  }
+  $('theme-select').value = themePref();
+  $('theme-select').addEventListener('change', e => {
+    try { localStorage.setItem(KEY_THEME, e.target.value); } catch (err) {}
+    applyTheme();
+  });
+  // Bei "Wie Gerät": automatisch umschalten, wenn das Gerät zwischen Hell und Dunkel wechselt
+  systemDark.addEventListener('change', () => { if (themePref() === 'system') applyTheme(); });
 
   /* ---------- Export / Import / Zurücksetzen (JSON-Datensicherung) ---------- */
 
