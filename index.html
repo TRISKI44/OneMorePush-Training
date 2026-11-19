@@ -154,6 +154,9 @@
   th { font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); font-weight: 700; }
   td.num, th.num { text-align: right; } /* Zahlenspalten rechtsbündig */
   tbody tr:hover { background: #f8faff; }
+  tbody tr.planned { background: #eef0f3; } /* geplante (zukünftige) Trainings: leicht grau hinterlegt */
+  tbody tr.planned:hover { background: #e6e9ee; }
+  .planned-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: #d9dde4; color: #5b6575; font-size: .72rem; font-weight: 600; }
   .pos { color: var(--teal); font-weight: 600; }   /* positiver TSB */
   .neg { color: var(--orange); font-weight: 600; } /* negativer TSB */
   .badge { display: inline-block; background: var(--blue-soft); color: var(--blue-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 600; }
@@ -793,7 +796,8 @@
   // Aktualisiert die drei Kennzahlen oben (Werte von heute)
   function renderKpis() {
     const { days } = computeSeries(trainings);
-    const last = days.length ? days[days.length - 1] : { ctl: 0, atl: 0, tsb: 0 }; // letzter Tag = heute
+    // Wert von HEUTE (nicht der letzte Tag der Reihe – der kann wegen geplanter Trainings in der Zukunft liegen)
+    const last = days.find(d => d.date === todayISO()) || { ctl: 0, atl: 0, tsb: 0 };
     $('kpi-ctl').textContent = fmt(last.ctl);
     $('kpi-atl').textContent = fmt(last.atl);
     $('kpi-tsb').textContent = fmt(last.tsb);
@@ -907,10 +911,12 @@
     }
     // Sortierung: nach Datum absteigend, bei gleichem Datum nach ID
     const sorted = trainings.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    const today = todayISO();
     body.innerHTML = sorted.map(t => {
       const r = map[t.date];                            // Werte des Trainingstages
-      return `<tr>
-        <td>${fmtDateWd(t.date)}</td>
+      const planned = t.date > today;                   // Datum in der Zukunft = geplantes Training
+      return `<tr${planned ? ' class="planned" title="Geplantes Training"' : ''}>
+        <td>${fmtDateWd(t.date)}${planned ? '<span class="planned-tag">geplant</span>' : ''}</td>
         <td><span class="badge">${esc(t.sport)}</span></td>
         <td>${t.desc ? esc(t.desc) : '<span style="color:var(--muted)">–</span>'}</td>
         <td class="num">${t.duration ? fmt(t.duration, 0) + ' min' : '–'}</td>
@@ -1022,7 +1028,7 @@
       $('gauge-marker').style.left = '0%';
       return;
     }
-    const t = days[days.length - 1];                            // letzter Tag = heute
+    const t = days.find(d => d.date === todayISO()) || days[days.length - 1]; // Tag von heute (geplante Tage danach zählen nicht)
     const zone = ZONES.find(z => t.tsb < z.max);                // erste Zone, deren Obergrenze über dem TSB liegt
     $('fs-tsb').textContent = fmt(t.tsb);
     $('fs-tsb').style.color = zone.color;
@@ -1126,7 +1132,10 @@
       days = days.filter(d => (!from || d.date >= from) && (!to || d.date <= to));
       if (!days.length) { msg.textContent = 'Im gewählten Zeitraum gibt es keine Daten.'; return; }
     } else {
-      if (chartRange > 0) days = days.slice(-chartRange);       // nur die letzten N Tage anzeigen
+      if (chartRange > 0) {                                     // nur die letzten N Tage bis heute anzeigen (+ alle geplanten Tage danach)
+        const ti = days.findIndex(d => d.date === todayISO());
+        days = days.slice(Math.max(0, (ti < 0 ? days.length : ti + 1) - chartRange));
+      }
       $('c-from').value = days[0].date;                         // Kalender zeigt den angezeigten Zeitraum
       $('c-to').value = days[days.length - 1].date;
     }
@@ -1135,7 +1144,10 @@
     // (siehe Abschnitt "Wischen" unten). Die Y-Achse bleibt dabei stehen.
     const MOBILE = window.innerWidth <= 700;
     const WIN = MOBILE ? Math.min(14, days.length) : days.length; // Anzahl sichtbarer Tage
-    chartView = { min: days.length - WIN, len: WIN, total: days.length };
+    // Startfenster: heute plus bis zu 7 geplante Tage sichtbar (ohne geplante Tage: wie bisher die letzten Tage)
+    const todayIdx = days.findIndex(d => d.date === todayISO());
+    const startMin = todayIdx < 0 ? days.length - WIN : Math.min(days.length - WIN, Math.max(0, todayIdx + 8 - WIN));
+    chartView = { min: startMin, len: WIN, total: days.length };
     document.querySelector('.swipe-hint').classList.toggle('show', WIN < days.length);
     updateViewButtons();
     const chartW = document.querySelector('.chart-scroll').clientWidth;
@@ -1146,6 +1158,10 @@
 
     const labels = days.map(d => weekday(d.date) + ' ' + fmtDate(d.date).slice(0, 6)); // X-Achse: "Mo 18.11."
     const r1 = n => Math.round(n * 10) / 10;                    // auf 1 Nachkommastelle runden
+    // Zukunft (geplante Trainings): Linienabschnitte nach heute als Strich-Punkt-Linie, gleiche Farbe
+    const todayStr = todayISO();
+    const DASH_DOT = [8, 4, 2, 4];                              // Strich 8, Lücke 4, Punkt 2, Lücke 4
+    const future = { borderDash: c => days[c.p1DataIndex] && days[c.p1DataIndex].date > todayStr ? DASH_DOT : undefined };
     const AXIS_W = 52;                                          // feste Breite der Y-Achse -> beide Diagramme exakt untereinander
     const grid = { color: '#edf1f7' };                          // feine, helle Gitterlinien (waagerecht)
     // Senkrechte Gitterlinien nur montags -> eine Linie pro Woche
@@ -1156,7 +1172,8 @@
                      align: 'inner' }; // erstes/letztes Datum nach innen -> beide Diagramme gleich breit
     const tooltip = {
       callbacks: {
-        title: items => fmtDateWd(days[items[0].dataIndex].date),           // Tooltip-Titel: "Mo 18.11.2026"
+        title: items => { const d = days[items[0].dataIndex].date;           // Tooltip-Titel: "Mo 18.11.2026"
+                          return fmtDateWd(d) + (d > todayStr ? ' (geplant)' : ''); },
         // Werte mit Dezimalkomma. Im Form-Diagramm zusätzlich CTL und ATL, damit alle drei Werte sichtbar sind.
         label: c => {
           const d = days[c.dataIndex];
@@ -1186,8 +1203,8 @@
         labels,
         datasets: [
           { label: 'Fitness (CTL)', data: days.map(d => r1(d.ctl)), borderColor: '#2f6fed', backgroundColor: 'rgba(47,111,237,.10)',
-            fill: 'origin', tension: .3, pointRadius: 0, borderWidth: 2 },
-          { label: 'Ermüdung (ATL)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2 }
+            fill: 'origin', tension: .3, pointRadius: 0, borderWidth: 2, segment: future },
+          { label: 'Ermüdung (ATL)', data: days.map(d => r1(d.atl)), borderColor: '#f58a1f', tension: .3, pointRadius: 0, borderWidth: 2, segment: future }
         ]
       },
       options: {
@@ -1209,7 +1226,7 @@
       data: {
         labels,
         datasets: [
-          { label: 'Form (TSB)', data: days.map(d => r1(d.tsb)), borderColor: '#22a35a', tension: .3, pointRadius: 0, borderWidth: 2.5 }
+          { label: 'Form (TSB)', data: days.map(d => r1(d.tsb)), borderColor: '#22a35a', tension: .3, pointRadius: 0, borderWidth: 2.5, segment: future }
         ]
       },
       options: {
