@@ -178,6 +178,10 @@
   .pd-unit .acts { margin-left: auto; display: flex; gap: 6px; }
   .pd-add { align-self: flex-start; }
   .pd-none { color: var(--muted); padding-top: 6px; }
+  /* Historie: ATL/CTL/TSB in denselben Farben wie die Linien im Fitness Chart */
+  td.v-ctl { color: #2f6fed; font-weight: 600; } /* Fitness (CTL): blau */
+  td.v-atl { color: #f58a1f; font-weight: 600; } /* Ermüdung (ATL): orange */
+  td.v-tsb { color: #22a35a; font-weight: 600; } /* Form (TSB): grün */
   .pos { color: var(--teal); font-weight: 600; }   /* positiver TSB */
   .neg { color: var(--orange); font-weight: 600; } /* negativer TSB */
   .badge { display: inline-block; background: var(--blue-soft); color: var(--blue-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; font-weight: 600; }
@@ -1045,9 +1049,9 @@
         <td class="num">${t.distance ? fmt(t.distance, 1) + ' km' : '–'}</td>
         <td class="num">${t.rpe ? fmt(t.rpe, 0) : '–'}</td>
         <td class="num"><strong>${fmt(t.load, 1)}</strong></td>
-        <td class="num">${r ? fmt(r.atl) : dash}</td>
-        <td class="num">${r ? fmt(r.ctl) : dash}</td>
-        <td class="num ${r ? (r.tsb >= 0 ? 'pos' : 'neg') : ''}">${r ? fmt(r.tsb) : dash}</td>
+        <td class="num v-atl">${r ? fmt(r.atl) : dash}</td>
+        <td class="num v-ctl">${r ? fmt(r.ctl) : dash}</td>
+        <td class="num v-tsb">${r ? fmt(r.tsb) : dash}</td>
         <td class="num">
           <button class="btn btn-ghost btn-sm" data-edit="${t.id}">Bearbeiten</button>
           <button class="btn btn-danger btn-sm" data-del="${t.id}">Löschen</button>
