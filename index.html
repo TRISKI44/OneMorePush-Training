@@ -725,10 +725,13 @@
     GEPLANTE TRAININGS
     - Ein Training, das mit einem Datum NACH heute gespeichert wird, bekommt planned: true.
     - Geplante Einheiten werden nie selbst zum echten Training. Das tatsächliche Training wird ganz normal neu erfasst.
-    - Status einer geplanten Einheit (automatisch):
-        'erledigt'       = am selben Tag gibt es ein echtes Training
-        'nicht erledigt' = der Tag ist vorbei und es gibt kein echtes Training
-        'geplant'        = heute oder in der Zukunft, noch offen
+    - Status einer geplanten Einheit (automatisch, pro Tag gezählt):
+        Jedes echte Training eines Tages "erledigt" höchstens EINE geplante Einheit dieses Tages
+        (2 Pläne + 1 echtes Training -> nur 1 Plan erledigt). Zuerst werden Pläne mit gleicher
+        Sportart zugeordnet, danach die übrigen in der Reihenfolge, in der sie angelegt wurden.
+        'erledigt'       = ein echtes Training dieses Tages wurde dem Plan zugeordnet
+        'nicht erledigt' = der Tag ist vorbei und für diesen Plan blieb kein echtes Training übrig
+        'geplant'        = heute oder in der Zukunft, noch offen (heute ist noch nicht abgeschlossen)
     - "Stand heute" (Kennzahlen, Formeinschätzung) zählt NUR echte Trainings.
     - Der Verlauf in die Zukunft (Chart, Historie) rechnet zusätzlich die offenen geplanten Einheiten ab heute mit ein.
   */
@@ -740,11 +743,27 @@
     trainings.forEach(t => { if (t.date > today) t.planned = true; });
   }
 
-  // Status einer geplanten Einheit; realDates = Set der Tage mit echtem Training
-  function planStatus(t, realDates) {
-    if (realDates.has(t.date)) return 'erledigt';
-    return t.date < todayISO() ? 'nicht erledigt' : 'geplant';
+  // Berechnet den Status ALLER geplanten Einheiten auf einmal. Rückgabe: { id: 'erledigt' | 'nicht erledigt' | 'geplant' }
+  function computePlanStatuses(realList) {
+    const today = todayISO();
+    const realByDate = {};                                     // Tag -> Liste der echten Trainings
+    realList.forEach(t => (realByDate[t.date] = realByDate[t.date] || []).push(t));
+    const plansByDate = {};                                    // Tag -> Liste der geplanten Einheiten
+    trainings.filter(t => t.planned).forEach(t => (plansByDate[t.date] = plansByDate[t.date] || []).push(t));
+    const statuses = {};
+    Object.keys(plansByDate).forEach(date => {
+      const plans = plansByDate[date].slice().sort((a, b) => a.id.localeCompare(b.id)); // Reihenfolge des Anlegens
+      const unused = (realByDate[date] || []).slice();         // noch nicht zugeordnete echte Trainings
+      const take = pick => { const i = unused.findIndex(pick); if (i < 0) return false; unused.splice(i, 1); return true; };
+      plans.forEach(p => { if (take(r => r.sport === p.sport)) statuses[p.id] = 'erledigt'; }); // 1. gleiche Sportart
+      plans.forEach(p => { if (!statuses[p.id] && take(() => true)) statuses[p.id] = 'erledigt'; }); // 2. beliebiges Training
+      plans.forEach(p => { if (!statuses[p.id]) statuses[p.id] = date < today ? 'nicht erledigt' : 'geplant'; }); // 3. Rest
+    });
+    return statuses;
   }
+
+  // Status einer geplanten Einheit aus der vorberechneten Liste
+  const planStatus = (t, statuses) => statuses[t.id] || 'geplant';
 
   /*
     Berechnet beide Reihen:
@@ -756,15 +775,15 @@
   function computeAll(until) {
     const today = todayISO();
     const realList = realTrainings();
-    const realDates = new Set(realList.map(t => t.date));
-    const open = trainings.filter(t => t.planned && planStatus(t, realDates) === 'geplant');
+    const statuses = computePlanStatuses(realList);            // Status jeder geplanten Einheit
+    const open = trainings.filter(t => t.planned && planStatus(t, statuses) === 'geplant');
     const real = computeSeries(realList);
     const proj = (open.length || until) ? computeSeries(realList.concat(open), until) : real;
     const zero = date => ({ date, load: 0, atl: 0, ctl: 0, tsb: 0 });
     const days = proj.days.map(d => d.date <= today ? (real.map[d.date] || zero(d.date)) : d);
     const map = {};
     days.forEach(d => { map[d.date] = d; });
-    return { days, map, real, proj, realDates, today: map[today] || zero(today) };
+    return { days, map, real, proj, statuses, today: map[today] || zero(today) };
   }
 
   /* ==========================================================================
@@ -1156,7 +1175,7 @@
       const date = fromDayNum(start + i);
       const cls = date < today ? ' past' : date === today ? ' today' : '';
       const units = plans.filter(t => t.date === date).map(t => {
-        const status = planStatus(t, all.realDates);
+        const status = planStatus(t, all.statuses);
         const tag = status === 'geplant' ? '' : `<span class="planned-tag${STATUS_CLASS[status]}">${status}</span>`;
         const meta = t.factor === 0 ? '' : `${fmt(t.duration, 0)} min${t.distance ? ' · ' + fmt(t.distance, 1) + ' km' : ''} · RPE ${fmt(t.rpe, 0)} · Load ${fmt(t.load, 0)}`;
         return `<div class="pd-unit">
@@ -1403,7 +1422,7 @@
           const list = byDate[days[items[0].dataIndex].date] || [];
           if (!list.length) return ['', 'Kein Training'];
           return [''].concat(list.map(t => '• ' + t.sport + (t.desc ? ' – ' + t.desc : '') + ' · Load ' + fmt(t.load, 1)
-            + (t.planned ? ' (Plan: ' + planStatus(t, all.realDates) + ')' : '')));
+            + (t.planned ? ' (Plan: ' + planStatus(t, all.statuses) + ')' : '')));
         }
       }
     };
