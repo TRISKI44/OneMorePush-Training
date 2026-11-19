@@ -1060,12 +1060,13 @@
         if (yBottom - yTop <= 0) return;                        // Zone liegt komplett außerhalb des sichtbaren Bereichs
         ctx.fillStyle = hexToRgba(z.color, 0.12);               // Zonenfarbe, stark durchsichtig
         ctx.fillRect(chartArea.left, yTop, chartArea.right - chartArea.left, yBottom - yTop); // Rechteck über die volle Breite
-        if (yBottom - yTop >= 20) {                             // Beschriftung nur, wenn das Band hoch genug ist
+        const h = yBottom - yTop;                               // Höhe des Bands in Pixeln
+        if (h >= 13) {                                          // Beschriftung nur, wenn das Band hoch genug ist
           ctx.fillStyle = hexToRgba(z.color, 0.95);
           ctx.font = '600 11px -apple-system, "Segoe UI", Roboto, sans-serif';
           ctx.textAlign = 'right';                              // rechtsbündig
           ctx.textBaseline = 'top';
-          ctx.fillText(z.short, chartArea.right - 8, yTop + 5); // Text oben rechts im Band
+          ctx.fillText(z.short, chartArea.right - 8, yTop + Math.min(5, (h - 11) / 2)); // Text oben rechts im Band (bei schmalen Bändern mittig)
         }
       });
       ctx.restore();                                            // Zeichenzustand zurücksetzen
@@ -1216,8 +1217,8 @@
         plugins: { legend: { display: false }, tooltip },
         scales: {
           x: { grid: xGrid, ticks: xTicks, min: chartView.min, max: chartView.min + chartView.len - 1 },
-          // Achse mindestens von -35 bis +25, damit alle Zonen sichtbar sind; beschriftet werden die Zonengrenzen
-          y: { suggestedMin: -35, suggestedMax: 25, grid: { color: '#dfe5ee' }, ticks: { color: '#6b7a90' },
+          // Achse mindestens von -42 bis +32, damit auch die äußeren Zonen (Überlastung, Zu frisch) breit genug für ihre Beschriftung sind
+          y: { suggestedMin: -42, suggestedMax: 32, grid: { color: '#dfe5ee' }, ticks: { color: '#6b7a90' },
                title: { display: true, text: 'Form' },
                afterBuildTicks: ax => { ax.ticks = bounds.filter(v => v >= ax.min && v <= ax.max).map(value => ({ value })); },
                afterFit: s => { s.width = AXIS_W; } }
